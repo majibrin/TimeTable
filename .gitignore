@@ -1,0 +1,82 @@
+fypenv
+# ==========================================
+# OS / IDE Specific
+# ==========================================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# ==========================================
+# Django (Backend)
+# ==========================================
+# Virtual Environment
+venv/
+.venv/
+env/
+ENV/
+pyenv/
+
+# Python caching
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Database (Local development)
+*.sqlite3
+
+# Media and Static directories used in production/local storage
+/media/
+# NOTE: If you collect static files into a root directory, ignore it:
+/staticfiles/
+
+# Environment variables
+.env
+.env.local
+
+# Logs
+*.log
+pip-log.txt
+cherrypy.log
+
+# ==========================================
+# React (Frontend)
+# ==========================================
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Production build artifacts
+/frontend/build/
+/frontend/dist/
+/frontend/out/
+
+# Frontend log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Frontend environment files
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# Testing
+/frontend/coverage/
+
+# Code quality tools
+.eslintcache
+.stylelintcache
+
+# Next.js/Vite/CRA specific caches
+.next/
+.nuxt/
+.cache/
+
