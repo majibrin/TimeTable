@@ -2,19 +2,12 @@ from pathlib import Path
 import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-                                          
 
-
-# SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-v%fd3d_xk@oehg*gbqb7^sl4!!)9jqt(hpo++7-ztmv@29m=u0'
 
 DEBUG = True
 
-ALLOWED_HOSTS = [
-        "*"
-]
-
-
+ALLOWED_HOSTS = ["*"]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -23,13 +16,14 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
+
     'scheduler',
     'rest_framework',
     'corsheaders',
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',  # Must be placed at the absolute top
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -38,6 +32,9 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+# Allow any client origin to connect during local testing loops
+CORS_ALLOW_ALL_ORIGINS = True
 
 ROOT_URLCONF = 'core.urls'
 
@@ -58,29 +55,25 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
-
 USE_POSTGRES = (os.getenv("ENVIRONMENT") == "Production")
 
 if USE_POSTGRES:
-  DATABASES = {
-                'default': {
-                        'ENGINE': 'django.db.backends.postgresql',
-                        'NAME': 'fpy_timetable_db',
-                        'USER': 'pguser-tobe-changed',
-                        'HOST': 'localhost',
-                        'PORT': '5432',
-                 }
-            }
-else: 
-  DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': 'fpy_timetable_db',
+            'USER': 'pguser-tobe-changed',
+            'HOST': 'localhost',
+            'PORT': '5432',
+        }
     }
-}
-
-
-
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -98,13 +91,9 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
 USE_TZ = True
-
 STATIC_URL = 'static/'
 
 AUTH_USER_MODEL = 'scheduler.User'
