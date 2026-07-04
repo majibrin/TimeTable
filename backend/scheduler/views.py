@@ -6,11 +6,15 @@ from django.db import transaction
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
-from rest_framework_simplejwt.tokens import AccessToken
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework import generics, status
+from rest_framework.serializers import ModelSerializer
+from django.contrib.auth import authenticate
 from .models import Course, SessionSlot, Venue, LevelCohort, User
 from .serializers import CourseSerializer, SessionSlotSerializer
+from .auth_serializers import LoginSerializer
 from .engine import TimetableEngine
+
 
 def get_authenticated_user(request):
     """
@@ -28,6 +32,7 @@ def get_authenticated_user(request):
     except Exception:
         return None
 
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def index(request):
@@ -39,6 +44,26 @@ def index(request):
         "role": getattr(user, 'role', 'ANONYMOUS')
     })
 
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def login_view(request):
+    serializer = LoginSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    username = serializer.validated_data['username']
+    password = serializer.validated_data['password']
+    user = authenticate(username=username, password=password)
+    if not user:
+        return Response({"error": "Invalid credentials"}, status=401)
+    refresh = RefreshToken.for_user(user)
+    return Response({
+        "access": str(refresh.access_token),
+        "refresh": str(refresh),
+        "username": user.username,
+        "role": user.role,
+    })
+
+
 class CourseListCreateView(generics.ListCreateAPIView):
     queryset = Course.objects.all()
     serializer_class = CourseSerializer
@@ -48,6 +73,35 @@ class CourseListCreateView(generics.ListCreateAPIView):
         if not get_authenticated_user(request):
             return JsonResponse({"error": "Unauthorized"}, status=401)
         return super().dispatch(request, *args, **kwargs)
+
+
+class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Course.objects.all()
+    serializer_class = CourseSerializer
+    permission_classes = [AllowAny]
+
+    def dispatch(self, request, *args, **kwargs):
+        if not get_authenticated_user(request):
+            return JsonResponse({"error": "Unauthorized"}, status=401)
+        return super().dispatch(request, *args, **kwargs)
+
+
+class VenueSerializer(ModelSerializer):
+    class Meta:
+        model = Venue
+        fields = ['id', 'name', 'capacity']
+
+
+class VenueListCreateView(generics.ListCreateAPIView):
+    queryset = Venue.objects.all()
+    serializer_class = VenueSerializer
+    permission_classes = [AllowAny]
+
+    def dispatch(self, request, *args, **kwargs):
+        if not get_authenticated_user(request):
+            return JsonResponse({"error": "Unauthorized"}, status=401)
+        return super().dispatch(request, *args, **kwargs)
+
 
 class SessionSlotListCreateView(generics.ListCreateAPIView):
     serializer_class = SessionSlotSerializer
@@ -65,12 +119,12 @@ class SessionSlotListCreateView(generics.ListCreateAPIView):
 
         return queryset
 
+
 @csrf_exempt
 def generate_timetable_trigger(request):
     if request.method != 'POST':
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
-    # SECURE MANIFEST: Manually validate user session via the token payload
     user = get_authenticated_user(request)
     if not user:
         return JsonResponse({"error": "Authentication credentials were not provided or are invalid."}, status=401)
@@ -98,15 +152,8 @@ def generate_timetable_trigger(request):
     sessions_to_optimize = []
 
     for course in courses:
-        # Dynamic Lookup: Preserve specific lecturer assigned during course setup
-        assigned_lecturer_id = None
-        if hasattr(course, 'lecturer') and course.lecturer:
-            assigned_lecturer_id = course.lecturer.id
-        elif hasattr(course, 'lecturer_id') and course.lecturer_id:
-            assigned_lecturer_id = course.lecturer_id
-        else:
-            first_lecturer = lecturers.first()
-            assigned_lecturer_id = first_lecturer.id if first_lecturer else None
+        # Use the lecturer explicitly assigned to the course; no fallback to first()
+        assigned_lecturer_id = course.lecturer_id
 
         if course.unit == 3:
             sessions_to_optimize.append({
@@ -166,58 +213,3 @@ def generate_timetable_trigger(request):
 
     except Exception as e:
         return JsonResponse({"error": f"Heuristic optimization execution failed: {str(e)}"}, status=500)
-
-
-from rest_framework_simplejwt.tokens import RefreshToken
-from .auth_serializers import LoginSerializer
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def login_view(request):
-    serializer = LoginSerializer(data=request.data)
-    serializer.is_valid(raise_exception=True)
-    username = serializer.validated_data['username']
-    password = serializer.validated_data['password']
-    from django.contrib.auth import authenticate
-    user = authenticate(username=username, password=password)
-    if not user:
-        return Response({"error": "Invalid credentials"}, status=401)
-    refresh = RefreshToken.for_user(user)
-    return Response({
-        "access": str(refresh.access_token),
-        "refresh": str(refresh),
-        "username": user.username,
-        "role": user.role,
-    })
-
-
-from rest_framework import generics
-from .models import Venue
-from rest_framework.serializers import ModelSerializer
-
-class VenueSerializer(ModelSerializer):
-    class Meta:
-        model = Venue
-        fields = ['id', 'name', 'capacity']
-
-class VenueListCreateView(generics.ListCreateAPIView):
-    queryset = Venue.objects.all()
-    serializer_class = VenueSerializer
-    permission_classes = [AllowAny]
-
-    def dispatch(self, request, *args, **kwargs):
-        if not get_authenticated_user(request):
-            return JsonResponse({"error": "Unauthorized"}, status=401)
-        return super().dispatch(request, *args, **kwargs)
-
-
-
-class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Course.objects.all()
-    serializer_class = CourseSerializer
-    permission_classes = [AllowAny]
-
-    def dispatch(self, request, *args, **kwargs):
-        if not get_authenticated_user(request):
-            return JsonResponse({"error": "Unauthorized"}, status=401)
-        return super().dispatch(request, *args, **kwargs)

@@ -5,16 +5,25 @@ from .models import Course, SessionSlot
 class CourseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Course
-        fields = ['id', 'title', 'code', 'unit', 'cohort']
+        fields = ['id', 'title', 'code', 'unit', 'cohort', 'lecturer']
 
 class SessionSlotSerializer(serializers.ModelSerializer):
-    course_detail = serializers.CharField(source='course.__str__', read_only=True)
-    venue_name = serializers.CharField(source='venue.__str__', read_only=True)
-    lecturer_name = serializers.CharField(source='lecturer.__str__', read_only=True)
+    course_detail = serializers.SerializerMethodField()
+    venue_name = serializers.SerializerMethodField()
+    lecturer_name = serializers.SerializerMethodField()
 
     class Meta:
         model = SessionSlot
         fields = ['id', 'course', 'course_detail', 'lecturer', 'lecturer_name', 'venue', 'venue_name', 'day', 'start_time', 'duration', 'is_published']
+
+    def get_course_detail(self, obj):
+        return str(obj.course) if obj.course else None
+
+    def get_venue_name(self, obj):
+        return str(obj.venue) if obj.venue else "TBD"
+
+    def get_lecturer_name(self, obj):
+        return str(obj.lecturer) if obj.lecturer else "Staff (Unassigned)"
 
     def validate(self, data):
         instance = self.instance

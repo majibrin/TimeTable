@@ -54,6 +54,13 @@ class Course(models.Model):
     code = models.CharField(max_length=10, unique=True)
     unit = models.IntegerField()
     cohort = models.ForeignKey(LevelCohort, on_delete=models.CASCADE)
+    lecturer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        limit_choices_to={'role': 'LECTURER'}
+    )
 
     def __str__(self):
         return f"{self.code} - {self.title} ({self.unit} C.U)"

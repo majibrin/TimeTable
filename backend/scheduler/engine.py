@@ -27,7 +27,7 @@ class TimetableEngine:
         # Step 2: Cooling optimization loop
         while temp > self.min_temp:
             # Internal equilibrium iterations per temperature level
-            for _ in range(100):
+            for _ in range(500):
                 neighbor_state = self._generate_neighbor(current_state, venue_ids)
                 neighbor_energy = self.calculate_energy(neighbor_state, venue_caps, cohort_caps)
 
@@ -55,7 +55,7 @@ class TimetableEngine:
                 'lecturer_id': s['lecturer_id'],
                 'venue_id': random.choice(venue_ids) if venue_ids else None,
                 'day_index': random.randint(0, 5),        # 0=MON, 5=SAT
-                'time_slot_index': random.randint(0, 9),  # 0=08:00, 9=17:00
+                'time_slot_index': random.choice([0,1,2,3,4,6,7,8,9]),
                 'duration': s['duration']
             })
         return state
@@ -73,8 +73,10 @@ class TimetableEngine:
         if operation == 'TIME':
             session['day_index'] = random.randint(0, 5)
             # Enforce hard upper boundary limit: 2-hour blocks cannot start at index 9 (5 PM)
-            max_slot = 9 if session['duration'] == 1 else 8
-            session['time_slot_index'] = random.randint(0, max_slot)
+            # max_slot = 9 if session['duration'] == 1 else 8
+            # session['time_slot_index'] = random.randint(0, max_slot)
+            valid_slots = [0,1,2,3,4,6,7,8] if session['duration'] == 2 else [0,1,2,3,4,6,7,8,9]
+            session['time_slot_index'] = random.choice(valid_slots)
         elif operation == 'VENUE' and venue_ids:
             session['venue_id'] = random.choice(venue_ids)
 
