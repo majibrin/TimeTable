@@ -2,16 +2,23 @@ from django.db import models
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 
+
 class User(AbstractUser):
     class RoleChoices(models.TextChoices):
-        ADMIN = 'ADMIN', 'Admin/Faculty Officer'
+        SUPER_ADMIN = 'SUPER_ADMIN', 'Super Admin'
+        TIMETABLE_OFFICER = 'TIMETABLE_OFFICER', 'Timetable Officer'
         LECTURER = 'LECTURER', 'Lecturer'
         STUDENT = 'STUDENT', 'Student'
 
-    role = models.CharField(max_length=20, choices=RoleChoices.choices, default=RoleChoices.STUDENT)
-    
+    role = models.CharField(
+        max_length=20,
+        choices=RoleChoices.choices,
+        default=RoleChoices.STUDENT
+    )
+
     def __str__(self):
-        return f"{self.username}({self.role})"
+        return f"{self.username} ({self.role})"
+
 
 class Faculty(models.Model):
     name = models.CharField(max_length=100, unique=True)
@@ -20,6 +27,7 @@ class Faculty(models.Model):
     def __str__(self):
         return f"{self.name} ({self.code})"
 
+
 class Department(models.Model):
     name = models.CharField(max_length=100, unique=True)
     code = models.CharField(max_length=10, unique=True)
@@ -27,6 +35,7 @@ class Department(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.code})"
+
 
 class LevelCohort(models.Model):
     department = models.ForeignKey(Department, on_delete=models.CASCADE)
@@ -37,7 +46,7 @@ class LevelCohort(models.Model):
             ("200L", "200 Level"),
             ("300L", "300 Level"),
             ("400L", "400 Level"),
-            ("500L", "500 Level")
+            ("500L", "500 Level"),
         ],
         default="100L"
     )
@@ -49,9 +58,10 @@ class LevelCohort(models.Model):
     def __str__(self):
         return f"{self.department.code} ({self.level})"
 
+
 class Course(models.Model):
     title = models.CharField(max_length=100)
-    code = models.CharField(max_length=10, unique=True)
+    code = models.CharField(max_length=15, unique=True)
     unit = models.IntegerField()
     cohort = models.ForeignKey(LevelCohort, on_delete=models.CASCADE)
     lecturer = models.ForeignKey(
@@ -59,11 +69,13 @@ class Course(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        limit_choices_to={'role': 'LECTURER'}
+        limit_choices_to={'role': 'LECTURER'},
+        related_name='courses'
     )
 
     def __str__(self):
         return f"{self.code} - {self.title} ({self.unit} C.U)"
+
 
 class Venue(models.Model):
     name = models.CharField(max_length=50, unique=True)
@@ -84,10 +96,17 @@ class Venue(models.Model):
     def __str__(self):
         return f"{self.name} (Cap: {self.capacity})"
 
+
 class SessionSlot(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE)
     venue = models.ForeignKey(Venue, on_delete=models.RESTRICT, null=True, blank=True)
-    lecturer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.RESTRICT, null=True, blank=True)
+    lecturer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.RESTRICT,
+        null=True,
+        blank=True,
+        related_name='session_slots'
+    )
     day = models.CharField(
         max_length=3,
         choices=[
@@ -96,7 +115,7 @@ class SessionSlot(models.Model):
             ("WED", "Wednesday"),
             ("THU", "Thursday"),
             ("FRI", "Friday"),
-            ("SAT", "Saturday")
+            ("SAT", "Saturday"),
         ]
     )
     start_time = models.TimeField(null=True, blank=True)
@@ -107,3 +126,36 @@ class SessionSlot(models.Model):
         venue_name = self.venue.name if self.venue else "TBD"
         return f"{self.course.code} | {venue_name} ({self.day} {self.start_time})"
 
+
+class AdjustmentRequest(models.Model):
+    class StatusChoices(models.TextChoices):
+        PENDING = 'PENDING', 'Pending'
+        APPROVED = 'APPROVED', 'Approved'
+        REJECTED = 'REJECTED', 'Rejected'
+
+    session_slot = models.ForeignKey(SessionSlot, on_delete=models.CASCADE, related_name='adjustment_requests')
+    lecturer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='adjustment_requests'
+    )
+    reason = models.TextField()
+    proposed_day = models.CharField(max_length=3, null=True, blank=True)
+    proposed_start_time = models.TimeField(null=True, blank=True)
+    proposed_venue = models.ForeignKey(
+        Venue,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+    status = models.CharField(
+        max_length=10,
+        choices=StatusChoices.choices,
+        default=StatusChoices.PENDING
+    )
+    officer_note = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Request by {self.lecturer.username} for {self.session_slot} [{self.status}]"
