@@ -3,23 +3,6 @@ from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 
 
-class User(AbstractUser):
-    class RoleChoices(models.TextChoices):
-        SUPER_ADMIN = 'SUPER_ADMIN', 'Super Admin'
-        TIMETABLE_OFFICER = 'TIMETABLE_OFFICER', 'Timetable Officer'
-        LECTURER = 'LECTURER', 'Lecturer'
-        STUDENT = 'STUDENT', 'Student'
-
-    role = models.CharField(
-        max_length=20,
-        choices=RoleChoices.choices,
-        default=RoleChoices.STUDENT
-    )
-
-    def __str__(self):
-        return f"{self.username} ({self.role})"
-
-
 class Faculty(models.Model):
     name = models.CharField(max_length=100, unique=True)
     code = models.CharField(max_length=10, unique=True)
@@ -35,6 +18,30 @@ class Department(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.code})"
+
+
+class User(AbstractUser):
+    class RoleChoices(models.TextChoices):
+        SUPER_ADMIN = 'SUPER_ADMIN', 'Super Admin'
+        TIMETABLE_OFFICER = 'TIMETABLE_OFFICER', 'Timetable Officer'
+        LECTURER = 'LECTURER', 'Lecturer'
+        STUDENT = 'STUDENT', 'Student'
+
+    role = models.CharField(
+        max_length=20,
+        choices=RoleChoices.choices,
+        default=RoleChoices.STUDENT
+    )
+    department = models.ForeignKey(
+        Department,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='users'
+    )
+
+    def __str__(self):
+        return f"{self.username} ({self.role})"
 
 
 class LevelCohort(models.Model):

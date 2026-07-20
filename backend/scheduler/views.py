@@ -10,14 +10,17 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from rest_framework import generics, status
-from rest_framework.serializers import ModelSerializer
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from .models import (
     Course, SessionSlot, Venue, LevelCohort,
     User, Faculty, Department, AdjustmentRequest
 )
-from .serializers import CourseSerializer, SessionSlotSerializer
+from .serializers import (
+    CourseSerializer, SessionSlotSerializer,
+    VenueSerializer, LevelCohortSerializer,
+    DepartmentWithCohortsSerializer
+)
 from .auth_serializers import LoginSerializer
 from .engine import TimetableEngine
 
@@ -46,7 +49,7 @@ def require_roles(request, roles):
     return user, None
 
 
-# ─── Auth Views ──────────────────────────────────────────────────────────────
+# ─── Auth ────────────────────────────────────────────────────────────────────
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -84,15 +87,15 @@ def login_view(request):
     })
 
 
-# ─── User Management (Super Admin only) ──────────────────────────────────────
+# ─── User Management ─────────────────────────────────────────────────────────
 
-class UserSerializer(ModelSerializer):
+class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'is_active']
 
 
-class UserCreateSerializer(ModelSerializer):
+class UserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
 
     class Meta:
@@ -137,7 +140,7 @@ class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 # ─── Faculty ─────────────────────────────────────────────────────────────────
 
-class FacultySerializer(ModelSerializer):
+class FacultySerializer(serializers.ModelSerializer):
     class Meta:
         model = Faculty
         fields = ['id', 'name', 'code']
@@ -159,7 +162,7 @@ class FacultyListCreateView(generics.ListCreateAPIView):
 
 # ─── Department ──────────────────────────────────────────────────────────────
 
-class DepartmentSerializer(ModelSerializer):
+class DepartmentSerializer(serializers.ModelSerializer):
     faculty_name = serializers.CharField(source='faculty.name', read_only=True)
 
     class Meta:
@@ -168,8 +171,12 @@ class DepartmentSerializer(ModelSerializer):
 
 
 class DepartmentListCreateView(generics.ListCreateAPIView):
-    serializer_class = DepartmentSerializer
     permission_classes = [AllowAny]
+
+    def get_serializer_class(self):
+        if self.request.query_params.get('with_cohorts') == 'true':
+            return DepartmentWithCohortsSerializer
+        return DepartmentSerializer
 
     def get_queryset(self):
         qs = Department.objects.select_related('faculty').all()
@@ -201,21 +208,12 @@ class DepartmentDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 # ─── LevelCohort ─────────────────────────────────────────────────────────────
 
-class LevelCohortSerializer(ModelSerializer):
-    department_name = serializers.CharField(source='department.name', read_only=True)
-    department_code = serializers.CharField(source='department.code', read_only=True)
-
-    class Meta:
-        model = LevelCohort
-        fields = ['id', 'department', 'department_name', 'department_code', 'level', 'student_count']
-
-
 class LevelCohortListCreateView(generics.ListCreateAPIView):
     serializer_class = LevelCohortSerializer
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        qs = LevelCohort.objects.select_related('department').all()
+        qs = LevelCohort.objects.select_related('department__faculty').all()
         dept = self.request.query_params.get('department')
         if dept:
             qs = qs.filter(department_id=dept)
@@ -231,7 +229,7 @@ class LevelCohortListCreateView(generics.ListCreateAPIView):
 
 
 class LevelCohortDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = LevelCohort.objects.select_related('department').all()
+    queryset = LevelCohort.objects.select_related('department__faculty').all()
     serializer_class = LevelCohortSerializer
     permission_classes = [AllowAny]
 
@@ -244,14 +242,8 @@ class LevelCohortDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 # ─── Venue ───────────────────────────────────────────────────────────────────
 
-class VenueSerializer(ModelSerializer):
-    class Meta:
-        model = Venue
-        fields = ['id', 'name', 'capacity']
-
-
 class VenueListCreateView(generics.ListCreateAPIView):
-    queryset = Venue.objects.all()
+    queryset = Venue.objects.select_related('faculty', 'department').all()
     serializer_class = VenueSerializer
     permission_classes = [AllowAny]
 
@@ -265,7 +257,7 @@ class VenueListCreateView(generics.ListCreateAPIView):
 
 
 class VenueDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Venue.objects.all()
+    queryset = Venue.objects.select_related('faculty', 'department').all()
     serializer_class = VenueSerializer
     permission_classes = [AllowAny]
 
@@ -316,7 +308,7 @@ class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
         return super().dispatch(request, *args, **kwargs)
 
 
-# ─── Lecturer list (for dropdowns) ───────────────────────────────────────────
+# ─── Lecturers dropdown ───────────────────────────────────────────────────────
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -339,65 +331,55 @@ class SessionSlotListCreateView(generics.ListCreateAPIView):
         qs = SessionSlot.objects.select_related(
             'course__cohort__department', 'venue', 'lecturer'
         ).all()
-
         level = self.request.query_params.get('level')
         day = self.request.query_params.get('day')
         department = self.request.query_params.get('department')
+        cohort = self.request.query_params.get('cohort')
         published = self.request.query_params.get('published')
-
         if level:
             qs = qs.filter(course__cohort__level=level)
         if day:
             qs = qs.filter(day__iexact=day)
         if department:
             qs = qs.filter(course__cohort__department_id=department)
+        if cohort:
+            qs = qs.filter(course__cohort_id=cohort)
         if published == 'true':
             qs = qs.filter(is_published=True)
-
-        # Lecturer sees only their own slots
         if user and user.role == 'LECTURER':
             qs = qs.filter(lecturer=user)
-
         return qs
 
 
-# ─── CSV Bulk Import ─────────────────────────────────────────────────────────
+# ─── CSV Import ───────────────────────────────────────────────────────────────
 
 @csrf_exempt
 def import_courses_csv(request):
     if request.method != 'POST':
         return JsonResponse({"error": "Method not allowed"}, status=405)
-
     user, err = require_roles(request, ['SUPER_ADMIN', 'TIMETABLE_OFFICER'])
     if err:
         return err
-
     file = request.FILES.get('file')
     if not file:
         return JsonResponse({"error": "No file uploaded"}, status=400)
-
     decoded = file.read().decode('utf-8')
     reader = csv.DictReader(io.StringIO(decoded))
-
     created = 0
     errors = []
-
     for i, row in enumerate(reader, start=2):
         try:
             dept_name = row.get('department', '').strip()
             level = row.get('level', '').strip()
             lecturer_username = row.get('lecturer', '').strip()
-
             dept = Department.objects.get(name__iexact=dept_name)
             cohort = LevelCohort.objects.get(department=dept, level=level)
-
             lecturer = None
             if lecturer_username:
                 try:
                     lecturer = User.objects.get(username=lecturer_username, role='LECTURER')
                 except User.DoesNotExist:
-                    errors.append(f"Row {i}: Lecturer '{lecturer_username}' not found, left unassigned")
-
+                    errors.append(f"Row {i}: Lecturer '{lecturer_username}' not found")
             Course.objects.update_or_create(
                 code=row['code'].strip(),
                 defaults={
@@ -411,10 +393,9 @@ def import_courses_csv(request):
         except Department.DoesNotExist:
             errors.append(f"Row {i}: Department '{dept_name}' not found")
         except LevelCohort.DoesNotExist:
-            errors.append(f"Row {i}: Cohort for '{dept_name} {level}' not found")
+            errors.append(f"Row {i}: Cohort '{dept_name} {level}' not found")
         except Exception as e:
             errors.append(f"Row {i}: {str(e)}")
-
     return JsonResponse({"created_or_updated": created, "errors": errors})
 
 
@@ -422,21 +403,16 @@ def import_courses_csv(request):
 def import_venues_csv(request):
     if request.method != 'POST':
         return JsonResponse({"error": "Method not allowed"}, status=405)
-
     user, err = require_roles(request, ['SUPER_ADMIN', 'TIMETABLE_OFFICER'])
     if err:
         return err
-
     file = request.FILES.get('file')
     if not file:
         return JsonResponse({"error": "No file uploaded"}, status=400)
-
     decoded = file.read().decode('utf-8')
     reader = csv.DictReader(io.StringIO(decoded))
-
     created = 0
     errors = []
-
     for i, row in enumerate(reader, start=2):
         try:
             Venue.objects.update_or_create(
@@ -446,131 +422,88 @@ def import_venues_csv(request):
             created += 1
         except Exception as e:
             errors.append(f"Row {i}: {str(e)}")
-
     return JsonResponse({"created_or_updated": created, "errors": errors})
 
 
-# ─── Timetable Generation ─────────────────────────────────────────────────────
+# ─── Generation ───────────────────────────────────────────────────────────────
 
 @csrf_exempt
 def generate_timetable_trigger(request):
     if request.method != 'POST':
         return JsonResponse({"error": "Method not allowed"}, status=405)
-
     user, err = require_roles(request, ['SUPER_ADMIN', 'TIMETABLE_OFFICER'])
     if err:
         return err
-
     try:
         data = json.loads(request.body) if request.body else {}
     except Exception:
         data = {}
-
     initial_temp = float(data.get('initial_temperature', 1000.0))
     cooling_rate = float(data.get('cooling_rate', 0.95))
     min_temp = float(data.get('min_temperature', 0.01))
-
     courses = Course.objects.select_related('cohort', 'lecturer').all()
     venues = Venue.objects.all()
     level_cohorts = LevelCohort.objects.all()
-
     if not venues.exists():
         return JsonResponse({"error": "No venues configured."}, status=400)
-
     if not courses.exists():
         return JsonResponse({"error": "No courses configured."}, status=400)
-
     sessions_to_optimize = []
-
     for course in courses:
         assigned_lecturer_id = course.lecturer_id
-
         if course.unit == 3:
-            sessions_to_optimize.append({
-                'course_id': course.id,
-                'cohort_id': course.cohort.id,
-                'lecturer_id': assigned_lecturer_id,
-                'duration': 2
-            })
-            sessions_to_optimize.append({
-                'course_id': course.id,
-                'cohort_id': course.cohort.id,
-                'lecturer_id': assigned_lecturer_id,
-                'duration': 1
-            })
+            sessions_to_optimize.append({'course_id': course.id, 'cohort_id': course.cohort.id, 'lecturer_id': assigned_lecturer_id, 'duration': 2})
+            sessions_to_optimize.append({'course_id': course.id, 'cohort_id': course.cohort.id, 'lecturer_id': assigned_lecturer_id, 'duration': 1})
         else:
-            sessions_to_optimize.append({
-                'course_id': course.id,
-                'cohort_id': course.cohort.id,
-                'lecturer_id': assigned_lecturer_id,
-                'duration': course.unit if course.unit > 0 else 1
-            })
-
+            sessions_to_optimize.append({'course_id': course.id, 'cohort_id': course.cohort.id, 'lecturer_id': assigned_lecturer_id, 'duration': course.unit if course.unit > 0 else 1})
     try:
-        engine = TimetableEngine(
-            initial_temp=initial_temp,
-            cooling_rate=cooling_rate,
-            min_temp=min_temp
-        )
-        optimized_state, final_energy = engine.run_optimization(
-            sessions_to_optimize, venues, level_cohorts, 0
-        )
-
+        engine = TimetableEngine(initial_temp=initial_temp, cooling_rate=cooling_rate, min_temp=min_temp)
+        optimized_state, final_energy = engine.run_optimization(sessions_to_optimize, venues, level_cohorts, 0)
         with transaction.atomic():
             SessionSlot.objects.all().delete()
-
             days_lookup = ["MON", "TUE", "WED", "THU", "FRI", "SAT"]
             time_hours_lookup = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
-
             for slot in optimized_state:
                 target_day = days_lookup[slot['day_index']]
                 target_hour = time_hours_lookup[slot['time_slot_index']]
-                start_time_obj = datetime.time(target_hour, 0)
-
                 SessionSlot.objects.create(
                     course_id=slot['course_id'],
                     venue_id=slot['venue_id'],
                     lecturer_id=slot['lecturer_id'],
                     day=target_day,
-                    start_time=start_time_obj,
+                    start_time=datetime.time(target_hour, 0),
                     duration=slot['duration'],
                     is_published=False
                 )
-
-        hard_conflicts = int(final_energy // 1000)
-
         return JsonResponse({
             "status": "Optimization completed successfully.",
-            "hard_conflicts": hard_conflicts,
+            "hard_conflicts": int(final_energy // 1000),
             "final_energy_score": final_energy,
             "sessions_generated": len(optimized_state)
         }, status=200)
-
     except Exception as e:
         return JsonResponse({"error": f"Generation failed: {str(e)}"}, status=500)
 
 
-# ─── Publish Timetable ───────────────────────────────────────────────────────
+# ─── Publish ─────────────────────────────────────────────────────────────────
 
 @csrf_exempt
 def publish_timetable(request):
     if request.method != 'POST':
         return JsonResponse({"error": "Method not allowed"}, status=405)
-
     user, err = require_roles(request, ['SUPER_ADMIN', 'TIMETABLE_OFFICER'])
     if err:
         return err
-
     count = SessionSlot.objects.filter(is_published=False).update(is_published=True)
     return JsonResponse({"status": "Published", "slots_published": count})
 
 
 # ─── Adjustment Requests ─────────────────────────────────────────────────────
 
-class AdjustmentRequestSerializer(ModelSerializer):
-    lecturer_name = serializers.CharField(source='lecturer.__str__', read_only=True)
+class AdjustmentRequestSerializer(serializers.ModelSerializer):
+    lecturer_name = serializers.SerializerMethodField()
     slot_detail = serializers.CharField(source='session_slot.__str__', read_only=True)
-    proposed_venue_name = serializers.CharField(source='proposed_venue.name', read_only=True)
+    proposed_venue_name = serializers.SerializerMethodField()
 
     class Meta:
         model = AdjustmentRequest
@@ -581,6 +514,14 @@ class AdjustmentRequestSerializer(ModelSerializer):
         ]
         read_only_fields = ['lecturer', 'status', 'officer_note', 'created_at']
 
+    def get_lecturer_name(self, obj):
+        if obj.lecturer:
+            return f"{obj.lecturer.first_name} {obj.lecturer.last_name}".strip() or obj.lecturer.username
+        return None
+
+    def get_proposed_venue_name(self, obj):
+        return obj.proposed_venue.name if obj.proposed_venue else None
+
 
 class AdjustmentRequestListCreateView(generics.ListCreateAPIView):
     serializer_class = AdjustmentRequestSerializer
@@ -588,12 +529,10 @@ class AdjustmentRequestListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         user = get_authenticated_user(self.request)
-        qs = AdjustmentRequest.objects.select_related(
-            'session_slot__course', 'lecturer', 'proposed_venue'
-        ).all()
+        qs = AdjustmentRequest.objects.select_related('session_slot__course', 'lecturer', 'proposed_venue').all().order_by('-created_at')
         if user and user.role == 'LECTURER':
             qs = qs.filter(lecturer=user)
-        return qs.order_by('-created_at')
+        return qs
 
     def dispatch(self, request, *args, **kwargs):
         user = get_authenticated_user(request)
@@ -622,28 +561,22 @@ class AdjustmentRequestDetailView(generics.RetrieveUpdateAPIView):
 def review_adjustment_request(request, pk):
     if request.method != 'POST':
         return JsonResponse({"error": "Method not allowed"}, status=405)
-
     user, err = require_roles(request, ['SUPER_ADMIN', 'TIMETABLE_OFFICER'])
     if err:
         return err
-
     try:
         adj = AdjustmentRequest.objects.get(pk=pk)
     except AdjustmentRequest.DoesNotExist:
-        return JsonResponse({"error": "Request not found"}, status=404)
-
+        return JsonResponse({"error": "Not found"}, status=404)
     try:
         data = json.loads(request.body)
     except Exception:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-
     decision = data.get('decision')
     if decision not in ('APPROVED', 'REJECTED'):
         return JsonResponse({"error": "decision must be APPROVED or REJECTED"}, status=400)
-
     adj.status = decision
     adj.officer_note = data.get('note', '')
-
     if decision == 'APPROVED':
         slot = adj.session_slot
         if adj.proposed_day:
@@ -653,6 +586,5 @@ def review_adjustment_request(request, pk):
         if adj.proposed_venue:
             slot.venue = adj.proposed_venue
         slot.save()
-
     adj.save()
     return JsonResponse({"status": decision, "id": pk})
