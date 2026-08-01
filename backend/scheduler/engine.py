@@ -1,21 +1,34 @@
 import math
 import random
 
+
 class TimetableEngine:
-    def __init__(self, initial_temp=1000.0, cooling_rate=0.95, min_temp=0.01):
+    def __init__(self, initial_temp=1000.0, cooling_rate=0.95, min_temp=0.01, constraint_weights=None):
         self.initial_temp = initial_temp
         self.cooling_rate = cooling_rate
         self.min_temp = min_temp
 
+        # Default weights — overridden by ConstraintSetting from DB
+        default = {
+            'lecturer_clash': 1000,
+            'venue_clash': 1000,
+            'cohort_clash': 1000,
+            'venue_capacity': 1000,
+            'faculty_break': 1000,
+            'lecture_hours': 1000,
+            'same_day_split': 100,
+            'saturday_lectures': 50,
+            'idle_gaps': 30,
+        }
+        if constraint_weights:
+            default.update(constraint_weights)
+        self.w = default
+
     def run_optimization(self, sessions_data, venues, level_cohorts, total_lecturers):
-        """
-        Executes the thermodynamic Simulated Annealing optimization cycle.
-        """
         venue_ids = [v.id for v in venues]
         venue_caps = {v.id: v.capacity for v in venues}
         cohort_caps = {c.id: c.student_count for c in level_cohorts}
 
-        # Step 1: Initialize random physical starting configuration state
         current_state = self._generate_initial_state(sessions_data, venue_ids)
         current_energy = self.calculate_energy(current_state, venue_caps, cohort_caps)
 
@@ -24,16 +37,13 @@ class TimetableEngine:
 
         temp = self.initial_temp
 
-        # Step 2: Cooling optimization loop
         while temp > self.min_temp:
-            # Internal equilibrium iterations per temperature level
             for _ in range(500):
                 neighbor_state = self._generate_neighbor(current_state, venue_ids)
                 neighbor_energy = self.calculate_energy(neighbor_state, venue_caps, cohort_caps)
 
                 delta_e = neighbor_energy - current_energy
 
-                # Metropolis Acceptance Criterion
                 if delta_e < 0 or random.uniform(0.0, 1.0) < math.exp(-delta_e / temp):
                     current_state = neighbor_state
                     current_energy = neighbor_energy
@@ -51,19 +61,16 @@ class TimetableEngine:
         for s in sessions_data:
             state.append({
                 'course_id': s['course_id'],
-                'cohort_id': s['cohort_id'],
+                'cohort_ids': s['cohort_ids'],   # list of cohort IDs
                 'lecturer_id': s['lecturer_id'],
                 'venue_id': random.choice(venue_ids) if venue_ids else None,
-                'day_index': random.randint(0, 5),        # 0=MON, 5=SAT
+                'day_index': random.randint(0, 5),
                 'time_slot_index': random.choice([0,1,2,3,4,6,7,8,9]),
                 'duration': s['duration']
             })
         return state
 
     def _generate_neighbor(self, current_state, venue_ids):
-        """
-        Displaces state values while protecting system architecture boundaries.
-        """
         neighbor = [dict(s) for s in current_state]
         idx = random.randint(0, len(neighbor) - 1)
         session = neighbor[idx]
@@ -72,9 +79,6 @@ class TimetableEngine:
 
         if operation == 'TIME':
             session['day_index'] = random.randint(0, 5)
-            # Enforce hard upper boundary limit: 2-hour blocks cannot start at index 9 (5 PM)
-            # max_slot = 9 if session['duration'] == 1 else 8
-            # session['time_slot_index'] = random.randint(0, max_slot)
             valid_slots = [0,1,2,3,4,6,7,8] if session['duration'] == 2 else [0,1,2,3,4,6,7,8,9]
             session['time_slot_index'] = random.choice(valid_slots)
         elif operation == 'VENUE' and venue_ids:
@@ -83,17 +87,14 @@ class TimetableEngine:
         return neighbor
 
     def calculate_energy(self, state, venue_caps, cohort_caps):
-        """
-        H1-H3 Conflict scoring engine utilizing high-speed single-pass hash maps.
-        """
+        w = self.w
         hard_penalty = 0
         soft_penalty = 0
 
-        # Fast lookup allocation indices
         lecturer_grid = {}
         venue_grid = {}
         cohort_grid = {}
-        course_days = {} # Tracks days assigned to a course for 3-unit split checks
+        course_days = {}
 
         for session in state:
             d = session['day_index']
@@ -101,51 +102,60 @@ class TimetableEngine:
             dur = session['duration']
             v_id = session['venue_id']
             l_id = session['lecturer_id']
-            c_id = session['cohort_id']
+            cohort_ids = session['cohort_ids']  # list
             cr_id = session['course_id']
 
-            # 1. H1: Venue Capacity Deficit check
-            if v_id and c_id:
-                if cohort_caps.get(c_id, 0) > venue_caps.get(v_id, 0):
-                    hard_penalty += 1000
+            # Venue capacity — use largest cohort size
+            if v_id and cohort_ids:
+                max_cohort_size = max(cohort_caps.get(c, 0) for c in cohort_ids)
+                if max_cohort_size > venue_caps.get(v_id, 0):
+                    hard_penalty += w['venue_capacity']
 
-            # 2. Track days used by each course to optimize 3-unit splits
+            # Saturday soft penalty
+            if d == 5:
+                soft_penalty += w['saturday_lectures']
+
+            # Track days for split course soft constraint
             if cr_id not in course_days:
                 course_days[cr_id] = []
             course_days[cr_id].append(d)
 
-            # Define exact temporal slots taken up by session duration
             occupied_slots = range(t_start, t_start + dur)
 
             for t in occupied_slots:
-                # Operational Window Overflow Cutoff (Past 6:00 PM)
+                # Lecture hours hard constraint
                 if t >= 10:
-                    hard_penalty += 1000
+                    hard_penalty += w['lecture_hours']
                     continue
 
-                # Institutional Constraints: Zuhr/Juma'at System Break (13:00 - 14:00 is index 5)
+                # Faculty break hard constraint (index 5 = 13:00)
                 if t == 5:
-                    hard_penalty += 1000
+                    hard_penalty += w['faculty_break']
 
-                # H2: Structural Resource Collisions (Lecturers, Venues, Cohorts)
+                # Lecturer clash
                 if l_id:
                     l_key = (l_id, d, t)
-                    if l_key in lecturer_grid: hard_penalty += 1000
+                    if l_key in lecturer_grid:
+                        hard_penalty += w['lecturer_clash']
                     lecturer_grid[l_key] = True
 
+                # Venue clash
                 if v_id:
                     v_key = (v_id, d, t)
-                    if v_key in venue_grid: hard_penalty += 1000
+                    if v_key in venue_grid:
+                        hard_penalty += w['venue_clash']
                     venue_grid[v_key] = True
 
-                if c_id:
+                # Cohort clash — check all cohorts
+                for c_id in cohort_ids:
                     c_key = (c_id, d, t)
-                    if c_key in cohort_grid: hard_penalty += 1000
+                    if c_key in cohort_grid:
+                        hard_penalty += w['cohort_clash']
                     cohort_grid[c_key] = True
 
-        # 3. Soft Constraint: 3-Unit Courses shouldn't have split components on the same day
+        # Same day split soft constraint
         for cr_id, days in course_days.items():
             if len(days) > 1 and days[0] == days[1]:
-                soft_penalty += 100  # Discourage, but don't break the system entirely
+                soft_penalty += w['same_day_split']
 
         return hard_penalty + soft_penalty

@@ -9,12 +9,13 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
-from rest_framework import generics, status
+from rest_framework import generics
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from .models import (
     Course, SessionSlot, Venue, LevelCohort,
-    User, Faculty, Department, AdjustmentRequest
+    User, Faculty, Department, AdjustmentRequest,
+    AcademicSession, Semester, TimeSlot, ConstraintSetting
 )
 from .serializers import (
     CourseSerializer, SessionSlotSerializer,
@@ -90,9 +91,11 @@ def login_view(request):
 # ─── User Management ─────────────────────────────────────────────────────────
 
 class UserSerializer(serializers.ModelSerializer):
+    department_name = serializers.CharField(source='department.name', read_only=True)
+
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'is_active']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'is_active', 'department', 'department_name']
 
 
 class UserCreateSerializer(serializers.ModelSerializer):
@@ -100,7 +103,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'password']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'password', 'department']
 
     def create(self, validated_data):
         password = validated_data.pop('password')
@@ -111,7 +114,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
 
 
 class UserListCreateView(generics.ListCreateAPIView):
-    queryset = User.objects.all().order_by('role', 'username')
+    queryset = User.objects.select_related('department').all().order_by('role', 'username')
     permission_classes = [AllowAny]
 
     def get_serializer_class(self):
@@ -127,7 +130,7 @@ class UserListCreateView(generics.ListCreateAPIView):
 
 
 class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = User.objects.all()
+    queryset = User.objects.select_related('department').all()
     serializer_class = UserSerializer
     permission_classes = [AllowAny]
 
@@ -275,17 +278,17 @@ class CourseListCreateView(generics.ListCreateAPIView):
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        qs = Course.objects.select_related('cohort__department', 'lecturer').all()
-        cohort = self.request.query_params.get('cohort')
+        qs = Course.objects.select_related('department', 'lecturer').prefetch_related('cohorts').all()
         department = self.request.query_params.get('department')
+        cohort = self.request.query_params.get('cohort')
         level = self.request.query_params.get('level')
-        if cohort:
-            qs = qs.filter(cohort_id=cohort)
         if department:
-            qs = qs.filter(cohort__department_id=department)
+            qs = qs.filter(department_id=department)
+        if cohort:
+            qs = qs.filter(cohorts__id=cohort)
         if level:
-            qs = qs.filter(cohort__level=level)
-        return qs
+            qs = qs.filter(cohorts__level=level)
+        return qs.distinct()
 
     def dispatch(self, request, *args, **kwargs):
         user = get_authenticated_user(request)
@@ -297,7 +300,7 @@ class CourseListCreateView(generics.ListCreateAPIView):
 
 
 class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Course.objects.select_related('cohort__department', 'lecturer').all()
+    queryset = Course.objects.select_related('department', 'lecturer').prefetch_related('cohorts').all()
     serializer_class = CourseSerializer
     permission_classes = [AllowAny]
 
@@ -308,7 +311,7 @@ class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
         return super().dispatch(request, *args, **kwargs)
 
 
-# ─── Lecturers dropdown ───────────────────────────────────────────────────────
+# ─── Lecturer list (filtered by department) ───────────────────────────────────
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -316,8 +319,11 @@ def lecturer_list(request):
     user = get_authenticated_user(request)
     if not user:
         return JsonResponse({"error": "Unauthorized"}, status=401)
-    lecturers = User.objects.filter(role='LECTURER').values('id', 'username', 'first_name', 'last_name')
-    return Response(list(lecturers))
+    qs = User.objects.filter(role='LECTURER')
+    department_id = request.query_params.get('department')
+    if department_id:
+        qs = qs.filter(department_id=department_id)
+    return Response(list(qs.values('id', 'username', 'first_name', 'last_name', 'department_id')))
 
 
 # ─── Session Slots ───────────────────────────────────────────────────────────
@@ -329,7 +335,7 @@ class SessionSlotListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         user = get_authenticated_user(self.request)
         qs = SessionSlot.objects.select_related(
-            'course__cohort__department', 'venue', 'lecturer'
+            'course__department', 'venue', 'lecturer', 'cohort'
         ).all()
         level = self.request.query_params.get('level')
         day = self.request.query_params.get('day')
@@ -337,18 +343,84 @@ class SessionSlotListCreateView(generics.ListCreateAPIView):
         cohort = self.request.query_params.get('cohort')
         published = self.request.query_params.get('published')
         if level:
-            qs = qs.filter(course__cohort__level=level)
+            qs = qs.filter(cohort__level=level)
         if day:
             qs = qs.filter(day__iexact=day)
         if department:
-            qs = qs.filter(course__cohort__department_id=department)
+            qs = qs.filter(cohort__department_id=department)
         if cohort:
-            qs = qs.filter(course__cohort_id=cohort)
+            qs = qs.filter(cohort_id=cohort)
         if published == 'true':
             qs = qs.filter(is_published=True)
         if user and user.role == 'LECTURER':
             qs = qs.filter(lecturer=user)
         return qs
+
+
+# ─── Academic Session & Semester ─────────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def session_list(request):
+    user = get_authenticated_user(request)
+    if not user:
+        return JsonResponse({"error": "Unauthorized"}, status=401)
+    sessions = AcademicSession.objects.prefetch_related('semesters').all()
+    data = []
+    for s in sessions:
+        data.append({
+            'id': s.id,
+            'name': s.name,
+            'is_active': s.is_active,
+            'semesters': list(s.semesters.values('id', 'name', 'is_active'))
+        })
+    return Response(data)
+
+
+# ─── TimeSlot ────────────────────────────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def timeslot_list(request):
+    user = get_authenticated_user(request)
+    if not user:
+        return JsonResponse({"error": "Unauthorized"}, status=401)
+    slots = TimeSlot.objects.filter(is_active=True).values('id', 'hour', 'label', 'is_break')
+    return Response(list(slots))
+
+
+# ─── Constraint Settings ─────────────────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def constraint_list(request):
+    user = get_authenticated_user(request)
+    if not user:
+        return JsonResponse({"error": "Unauthorized"}, status=401)
+    constraints = ConstraintSetting.objects.all().values('id', 'name', 'constraint_type', 'weight', 'enabled', 'description')
+    return Response(list(constraints))
+
+
+@csrf_exempt
+def update_constraint(request, pk):
+    if request.method != 'PATCH':
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    user, err = require_roles(request, ['SUPER_ADMIN', 'TIMETABLE_OFFICER'])
+    if err:
+        return err
+    try:
+        constraint = ConstraintSetting.objects.get(pk=pk)
+        data = json.loads(request.body)
+        if 'weight' in data:
+            constraint.weight = int(data['weight'])
+        if 'enabled' in data:
+            constraint.enabled = bool(data['enabled'])
+        constraint.save()
+        return JsonResponse({"id": pk, "weight": constraint.weight, "enabled": constraint.enabled})
+    except ConstraintSetting.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
 
 
 # ─── CSV Import ───────────────────────────────────────────────────────────────
@@ -370,30 +442,44 @@ def import_courses_csv(request):
     for i, row in enumerate(reader, start=2):
         try:
             dept_name = row.get('department', '').strip()
-            level = row.get('level', '').strip()
+            cohort_levels = [l.strip() for l in row.get('cohorts', '').split(';') if l.strip()]
             lecturer_username = row.get('lecturer', '').strip()
+
             dept = Department.objects.get(name__iexact=dept_name)
-            cohort = LevelCohort.objects.get(department=dept, level=level)
+
             lecturer = None
             if lecturer_username:
                 try:
                     lecturer = User.objects.get(username=lecturer_username, role='LECTURER')
                 except User.DoesNotExist:
                     errors.append(f"Row {i}: Lecturer '{lecturer_username}' not found")
-            Course.objects.update_or_create(
+
+            course, _ = Course.objects.update_or_create(
                 code=row['code'].strip(),
                 defaults={
                     'title': row['title'].strip(),
                     'unit': int(row['unit']),
-                    'cohort': cohort,
+                    'department': dept,
                     'lecturer': lecturer,
                 }
             )
+
+            # Assign cohorts from semicolon-separated levels
+            # e.g. cohorts = "100L;100L" with department column per cohort
+            # Simplified: all cohort levels belong to same department
+            cohorts = []
+            for level in cohort_levels:
+                try:
+                    c = LevelCohort.objects.get(department=dept, level=level)
+                    cohorts.append(c)
+                except LevelCohort.DoesNotExist:
+                    errors.append(f"Row {i}: Cohort '{dept_name} {level}' not found")
+            if cohorts:
+                course.cohorts.set(cohorts)
+
             created += 1
         except Department.DoesNotExist:
             errors.append(f"Row {i}: Department '{dept_name}' not found")
-        except LevelCohort.DoesNotExist:
-            errors.append(f"Row {i}: Cohort '{dept_name} {level}' not found")
         except Exception as e:
             errors.append(f"Row {i}: {str(e)}")
     return JsonResponse({"created_or_updated": created, "errors": errors})
@@ -434,53 +520,118 @@ def generate_timetable_trigger(request):
     user, err = require_roles(request, ['SUPER_ADMIN', 'TIMETABLE_OFFICER'])
     if err:
         return err
+
     try:
         data = json.loads(request.body) if request.body else {}
     except Exception:
         data = {}
+
     initial_temp = float(data.get('initial_temperature', 1000.0))
     cooling_rate = float(data.get('cooling_rate', 0.95))
     min_temp = float(data.get('min_temperature', 0.01))
-    courses = Course.objects.select_related('cohort', 'lecturer').all()
+
+    # Load constraint weights from DB
+    constraint_map = {
+        'Lecturer Clash': 'lecturer_clash',
+        'Venue Clash': 'venue_clash',
+        'Cohort Clash': 'cohort_clash',
+        'Venue Capacity': 'venue_capacity',
+        'Faculty Break': 'faculty_break',
+        'Lecture Hours': 'lecture_hours',
+        'Same Day Split': 'same_day_split',
+        'Saturday Lectures': 'saturday_lectures',
+        'Idle Gaps': 'idle_gaps',
+    }
+    constraint_weights = {}
+    for cs in ConstraintSetting.objects.all():
+        key = constraint_map.get(cs.name)
+        if key:
+            constraint_weights[key] = cs.weight if cs.enabled else 0
+
+    # Get active semester
+    active_semester = Semester.objects.filter(is_active=True).first()
+
+    courses = Course.objects.prefetch_related('cohorts').select_related('lecturer').all()
     venues = Venue.objects.all()
     level_cohorts = LevelCohort.objects.all()
+
     if not venues.exists():
         return JsonResponse({"error": "No venues configured."}, status=400)
     if not courses.exists():
         return JsonResponse({"error": "No courses configured."}, status=400)
+
     sessions_to_optimize = []
+
     for course in courses:
+        cohort_ids = list(course.cohorts.values_list('id', flat=True))
+        if not cohort_ids:
+            continue  # Skip courses with no cohort assigned
         assigned_lecturer_id = course.lecturer_id
+
         if course.unit == 3:
-            sessions_to_optimize.append({'course_id': course.id, 'cohort_id': course.cohort.id, 'lecturer_id': assigned_lecturer_id, 'duration': 2})
-            sessions_to_optimize.append({'course_id': course.id, 'cohort_id': course.cohort.id, 'lecturer_id': assigned_lecturer_id, 'duration': 1})
+            sessions_to_optimize.append({
+                'course_id': course.id,
+                'cohort_ids': cohort_ids,
+                'lecturer_id': assigned_lecturer_id,
+                'duration': 2
+            })
+            sessions_to_optimize.append({
+                'course_id': course.id,
+                'cohort_ids': cohort_ids,
+                'lecturer_id': assigned_lecturer_id,
+                'duration': 1
+            })
         else:
-            sessions_to_optimize.append({'course_id': course.id, 'cohort_id': course.cohort.id, 'lecturer_id': assigned_lecturer_id, 'duration': course.unit if course.unit > 0 else 1})
+            sessions_to_optimize.append({
+                'course_id': course.id,
+                'cohort_ids': cohort_ids,
+                'lecturer_id': assigned_lecturer_id,
+                'duration': course.unit if course.unit > 0 else 1
+            })
+
+    if not sessions_to_optimize:
+        return JsonResponse({"error": "No courses with cohorts assigned."}, status=400)
+
     try:
-        engine = TimetableEngine(initial_temp=initial_temp, cooling_rate=cooling_rate, min_temp=min_temp)
-        optimized_state, final_energy = engine.run_optimization(sessions_to_optimize, venues, level_cohorts, 0)
+        engine = TimetableEngine(
+            initial_temp=initial_temp,
+            cooling_rate=cooling_rate,
+            min_temp=min_temp,
+            constraint_weights=constraint_weights
+        )
+        optimized_state, final_energy = engine.run_optimization(
+            sessions_to_optimize, venues, level_cohorts, 0
+        )
+
         with transaction.atomic():
             SessionSlot.objects.all().delete()
             days_lookup = ["MON", "TUE", "WED", "THU", "FRI", "SAT"]
             time_hours_lookup = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+
             for slot in optimized_state:
                 target_day = days_lookup[slot['day_index']]
                 target_hour = time_hours_lookup[slot['time_slot_index']]
-                SessionSlot.objects.create(
-                    course_id=slot['course_id'],
-                    venue_id=slot['venue_id'],
-                    lecturer_id=slot['lecturer_id'],
-                    day=target_day,
-                    start_time=datetime.time(target_hour, 0),
-                    duration=slot['duration'],
-                    is_published=False
-                )
+                # Create one SessionSlot per cohort
+                for cohort_id in slot['cohort_ids']:
+                    SessionSlot.objects.create(
+                        course_id=slot['course_id'],
+                        venue_id=slot['venue_id'],
+                        lecturer_id=slot['lecturer_id'],
+                        cohort_id=cohort_id,
+                        semester=active_semester,
+                        day=target_day,
+                        start_time=datetime.time(target_hour, 0),
+                        duration=slot['duration'],
+                        is_published=False
+                    )
+
         return JsonResponse({
             "status": "Optimization completed successfully.",
             "hard_conflicts": int(final_energy // 1000),
             "final_energy_score": final_energy,
             "sessions_generated": len(optimized_state)
         }, status=200)
+
     except Exception as e:
         return JsonResponse({"error": f"Generation failed: {str(e)}"}, status=500)
 
@@ -529,7 +680,9 @@ class AdjustmentRequestListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         user = get_authenticated_user(self.request)
-        qs = AdjustmentRequest.objects.select_related('session_slot__course', 'lecturer', 'proposed_venue').all().order_by('-created_at')
+        qs = AdjustmentRequest.objects.select_related(
+            'session_slot__course', 'lecturer', 'proposed_venue'
+        ).all().order_by('-created_at')
         if user and user.role == 'LECTURER':
             qs = qs.filter(lecturer=user)
         return qs

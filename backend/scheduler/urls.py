@@ -6,7 +6,7 @@ urlpatterns = [
     path('', views.index),
     path('auth/login/', views.login_view),
 
-    # Users (Super Admin)
+    # Users
     path('users/', views.UserListCreateView.as_view()),
     path('users/<int:pk>/', views.UserDetailView.as_view()),
     path('lecturers/', views.lecturer_list),
@@ -28,6 +28,14 @@ urlpatterns = [
 
     # Slots
     path('slots/', views.SessionSlotListCreateView.as_view()),
+
+    # Sessions & Semesters
+    path('sessions/', views.session_list),
+    path('timeslots/', views.timeslot_list),
+
+    # Constraints
+    path('constraints/', views.constraint_list),
+    path('constraints/<int:pk>/', views.update_constraint),
 
     # Generation & Publishing
     path('generate/', views.generate_timetable_trigger),

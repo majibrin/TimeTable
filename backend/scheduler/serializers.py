@@ -4,17 +4,28 @@ from .models import Course, SessionSlot, Venue, Department, LevelCohort
 
 
 class CourseSerializer(serializers.ModelSerializer):
-    cohort_detail = serializers.SerializerMethodField()
+    cohorts = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=LevelCohort.objects.all()
+    )
+    cohorts_detail = serializers.SerializerMethodField()
     lecturer_name = serializers.SerializerMethodField()
+    department_name = serializers.CharField(source='department.name', read_only=True)
 
     class Meta:
         model = Course
-        fields = ['id', 'title', 'code', 'unit', 'cohort', 'cohort_detail', 'lecturer', 'lecturer_name']
+        fields = [
+            'id', 'title', 'code', 'unit',
+            'department', 'department_name',
+            'cohorts', 'cohorts_detail',
+            'lecturer', 'lecturer_name'
+        ]
 
-    def get_cohort_detail(self, obj):
-        if obj.cohort:
-            return f"{obj.cohort.department.name} — {obj.cohort.level}"
-        return None
+    def get_cohorts_detail(self, obj):
+        return [
+            {'id': c.id, 'label': f"{c.department.name} — {c.level}"}
+            for c in obj.cohorts.select_related('department').all()
+        ]
 
     def get_lecturer_name(self, obj):
         if obj.lecturer:
@@ -64,10 +75,17 @@ class SessionSlotSerializer(serializers.ModelSerializer):
     course_detail = serializers.SerializerMethodField()
     venue_name = serializers.SerializerMethodField()
     lecturer_name = serializers.SerializerMethodField()
+    cohort_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = SessionSlot
-        fields = ['id', 'course', 'course_detail', 'lecturer', 'lecturer_name', 'venue', 'venue_name', 'day', 'start_time', 'duration', 'is_published']
+        fields = [
+            'id', 'course', 'course_detail',
+            'lecturer', 'lecturer_name',
+            'venue', 'venue_name',
+            'cohort', 'cohort_detail',
+            'day', 'start_time', 'duration', 'is_published'
+        ]
 
     def get_course_detail(self, obj):
         return str(obj.course) if obj.course else None
@@ -79,6 +97,11 @@ class SessionSlotSerializer(serializers.ModelSerializer):
         if obj.lecturer:
             return f"{obj.lecturer.first_name} {obj.lecturer.last_name}".strip() or obj.lecturer.username
         return "Unassigned"
+
+    def get_cohort_detail(self, obj):
+        if obj.cohort:
+            return f"{obj.cohort.department.code} {obj.cohort.level}"
+        return None
 
     def validate(self, data):
         instance = self.instance
