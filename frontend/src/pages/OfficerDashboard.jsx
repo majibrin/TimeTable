@@ -10,40 +10,50 @@ export default function OfficerDashboard() {
   const [courses, setCourses] = useState([]);
   const [venues, setVenues] = useState([]);
   const [lecturers, setLecturers] = useState([]);
+  const [allLecturers, setAllLecturers] = useState([]);
   const [cohorts, setCohorts] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [generating, setGenerating] = useState(false);
-  const [courseForm, setCourseForm] = useState({ code: '', title: '', unit: 2, cohort: '', lecturer: '' });
+
+  const [courseForm, setCourseForm] = useState({
+    code: '', title: '', unit: 2,
+    department: '',
+    selectedCohorts: [],
+    lecturer: ''
+  });
   const [venueForm, setVenueForm] = useState({ name: '', capacity: '' });
 
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [slotsRes, coursesRes, venuesRes, lecturersRes, cohortsRes, requestsRes] = await Promise.all([
+      const [slotsRes, coursesRes, venuesRes, lecturersRes, cohortsRes, requestsRes, deptsRes] = await Promise.all([
         API.get('slots/'),
         API.get('courses/'),
         API.get('venues/'),
         API.get('lecturers/'),
         API.get('cohorts/'),
         API.get('requests/'),
+        API.get('departments/'),
       ]);
-      const normalizedSlots = slotsRes.data.map(slot => ({
+      setSchedules(slotsRes.data.map(slot => ({
         course_code: (slot.course_detail || '').split(' - ')[0] || `ID:${slot.course}`,
         room: slot.venue_name || 'TBD',
         lecturer: slot.lecturer_name || 'Unassigned',
         day: (slot.day || 'MON').toUpperCase().substring(0, 3),
         start_time: slot.start_time ? slot.start_time.substring(0, 5) : '08:00',
         duration: parseInt(slot.duration || 1, 10),
-      }));
-      setSchedules(normalizedSlots);
+      })));
       setCourses(coursesRes.data);
       setVenues(venuesRes.data);
+      setAllLecturers(lecturersRes.data);
       setLecturers(lecturersRes.data);
       setCohorts(cohortsRes.data);
       setRequests(requestsRes.data);
+      setDepartments(deptsRes.data);
     } catch (e) {
       setError('Failed to load data');
     } finally {
@@ -53,7 +63,20 @@ export default function OfficerDashboard() {
 
   useEffect(() => { fetchAll(); }, []);
 
-  const msg = (ok, text) => { if (ok) setSuccess(text); else setError(text); setTimeout(() => { setSuccess(''); setError(''); }, 4000); };
+  // Filter lecturers when department changes
+  useEffect(() => {
+    if (courseForm.department) {
+      setLecturers(allLecturers.filter(l => String(l.department_id) === String(courseForm.department)));
+    } else {
+      setLecturers(allLecturers);
+    }
+    setCourseForm(f => ({ ...f, lecturer: '' }));
+  }, [courseForm.department]);
+
+  const msg = (ok, text) => {
+    if (ok) setSuccess(text); else setError(text);
+    setTimeout(() => { setSuccess(''); setError(''); }, 4000);
+  };
 
   const handleGenerate = async () => {
     if (!window.confirm('Generate new timetable? Current slots will be replaced.')) return;
@@ -63,7 +86,7 @@ export default function OfficerDashboard() {
       msg(true, `Generated. Conflicts: ${res.data.hard_conflicts}. Sessions: ${res.data.sessions_generated}`);
       await fetchAll();
     } catch (e) {
-      msg(false, 'Generation failed');
+      msg(false, e.response?.data?.error || 'Generation failed');
     } finally {
       setGenerating(false);
     }
@@ -79,21 +102,35 @@ export default function OfficerDashboard() {
     }
   };
 
+  const toggleCohort = (id) => {
+    setCourseForm(f => ({
+      ...f,
+      selectedCohorts: f.selectedCohorts.includes(id)
+        ? f.selectedCohorts.filter(c => c !== id)
+        : [...f.selectedCohorts, id]
+    }));
+  };
+
   const handleCreateCourse = async (e) => {
     e.preventDefault();
+    if (courseForm.selectedCohorts.length === 0) {
+      msg(false, 'Select at least one cohort');
+      return;
+    }
     try {
       await API.post('courses/', {
         code: courseForm.code,
         title: courseForm.title,
         unit: parseInt(courseForm.unit),
-        cohort: parseInt(courseForm.cohort),
+        department: courseForm.department ? parseInt(courseForm.department) : null,
+        cohorts: courseForm.selectedCohorts,
         lecturer: courseForm.lecturer ? parseInt(courseForm.lecturer) : null,
       });
       msg(true, 'Course created');
-      setCourseForm({ code: '', title: '', unit: 2, cohort: '', lecturer: '' });
+      setCourseForm({ code: '', title: '', unit: 2, department: '', selectedCohorts: [], lecturer: '' });
       fetchAll();
     } catch (e) {
-      msg(false, e.response?.data?.code?.[0] || 'Failed to create course');
+      msg(false, e.response?.data?.code?.[0] || JSON.stringify(e.response?.data) || 'Failed to create course');
     }
   };
 
@@ -149,6 +186,7 @@ export default function OfficerDashboard() {
     try {
       const res = await API.post(endpoint, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       msg(true, `Imported ${res.data.created_or_updated}. Errors: ${res.data.errors.length}`);
+      if (res.data.errors.length > 0) console.warn(res.data.errors);
       fetchAll();
     } catch (e) {
       msg(false, 'Import failed');
@@ -195,58 +233,91 @@ export default function OfficerDashboard() {
         {success && <div className="bg-green-50 text-green-700 text-xs p-3 rounded mb-3 border border-green-200">{success}</div>}
 
         {tab === 'TIMETABLE' && (
-          loading ? <div className="text-center text-xs text-slate-400 py-12">Loading...</div>
-          : <TimetableGrid schedules={schedules} />
+          loading
+            ? <div className="text-center text-xs text-slate-400 py-12">Loading...</div>
+            : <TimetableGrid schedules={schedules} />
         )}
 
         {tab === 'COURSES' && (
           <div className="max-w-3xl">
             <div className="bg-white border border-slate-200 rounded-lg p-4 mb-4 shadow-sm">
               <h2 className="text-xs font-bold text-slate-700 mb-3 uppercase">Add Course</h2>
-              <form onSubmit={handleCreateCourse} className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] text-slate-500 mb-1">CODE</label>
-                  <input value={courseForm.code} onChange={e => setCourseForm({...courseForm, code: e.target.value})} required
-                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" />
+              <form onSubmit={handleCreateCourse} className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] text-slate-500 mb-1">CODE</label>
+                    <input value={courseForm.code} onChange={e => setCourseForm({...courseForm, code: e.target.value})} required
+                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-500 mb-1">TITLE</label>
+                    <input value={courseForm.title} onChange={e => setCourseForm({...courseForm, title: e.target.value})} required
+                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-500 mb-1">UNITS</label>
+                    <select value={courseForm.unit} onChange={e => setCourseForm({...courseForm, unit: e.target.value})}
+                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      {[1,2,3].map(u => <option key={u} value={u}>{u}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-500 mb-1">DEPARTMENT (for lecturer filter)</label>
+                    <select value={courseForm.department} onChange={e => setCourseForm({...courseForm, department: e.target.value})}
+                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      <option value="">-- All Departments --</option>
+                      {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </select>
+                  </div>
                 </div>
+
                 <div>
-                  <label className="block text-[10px] text-slate-500 mb-1">TITLE</label>
-                  <input value={courseForm.title} onChange={e => setCourseForm({...courseForm, title: e.target.value})} required
-                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  <label className="block text-[10px] text-slate-500 mb-2">
+                    COHORTS ({courseForm.selectedCohorts.length} selected)
+                  </label>
+                  <div className="border border-slate-200 rounded p-2 max-h-40 overflow-y-auto grid grid-cols-2 gap-1">
+                    {cohorts.map(c => (
+                      <label key={c.id} className="flex items-center gap-1.5 cursor-pointer hover:bg-slate-50 p-1 rounded">
+                        <input
+                          type="checkbox"
+                          checked={courseForm.selectedCohorts.includes(c.id)}
+                          onChange={() => toggleCohort(c.id)}
+                          className="w-3 h-3"
+                        />
+                        <span className="text-[10px] text-slate-700">{c.department_name} {c.level}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
+
                 <div>
-                  <label className="block text-[10px] text-slate-500 mb-1">UNITS</label>
-                  <select value={courseForm.unit} onChange={e => setCourseForm({...courseForm, unit: e.target.value})}
-                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400">
-                    {[1,2,3].map(u => <option key={u} value={u}>{u}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] text-slate-500 mb-1">COHORT</label>
-                  <select value={courseForm.cohort} onChange={e => setCourseForm({...courseForm, cohort: e.target.value})} required
-                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400">
-                    <option value="">-- Select --</option>
-                    {cohorts.map(c => <option key={c.id} value={c.id}>{c.department_name} {c.level}</option>)}
-                  </select>
-                </div>
-                <div className="col-span-2">
-                  <label className="block text-[10px] text-slate-500 mb-1">LECTURER</label>
+                  <label className="block text-[10px] text-slate-500 mb-1">
+                    LECTURER {courseForm.department ? `(${lecturers.length} in dept)` : '(all)'}
+                  </label>
                   <select value={courseForm.lecturer} onChange={e => setCourseForm({...courseForm, lecturer: e.target.value})}
                     className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400">
                     <option value="">-- Unassigned --</option>
-                    {lecturers.map(l => <option key={l.id} value={l.id}>{l.first_name} {l.last_name} ({l.username})</option>)}
+                    {lecturers.map(l => (
+                      <option key={l.id} value={l.id}>{l.first_name} {l.last_name} ({l.username})</option>
+                    ))}
                   </select>
                 </div>
-                <div className="col-span-2">
-                  <button type="submit" className="w-full py-2 bg-slate-900 text-white text-xs font-bold rounded hover:bg-slate-700">ADD COURSE</button>
-                </div>
+
+                <button type="submit" className="w-full py-2 bg-slate-900 text-white text-xs font-bold rounded hover:bg-slate-700">
+                  ADD COURSE
+                </button>
               </form>
+
               <div className="mt-3 pt-3 border-t border-slate-100">
-                <label className="block text-[10px] text-slate-500 mb-1">BULK IMPORT CSV (code, title, unit, department, level, lecturer)</label>
+                <label className="block text-[10px] text-slate-500 mb-1">
+                  BULK IMPORT CSV (code, title, unit, department, cohorts, lecturer)
+                  <span className="text-slate-400 ml-1">— cohorts column: semicolon-separated levels e.g. 100L;200L</span>
+                </label>
                 <input type="file" accept=".csv" onChange={e => handleImportCSV(e, 'import/courses/')}
                   className="text-xs text-slate-600" />
               </div>
             </div>
+
             <div className="bg-white border border-slate-200 rounded-lg shadow-sm">
               <div className="p-3 border-b border-slate-100 text-xs font-bold text-slate-700">COURSES ({courses.length})</div>
               <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
@@ -254,7 +325,10 @@ export default function OfficerDashboard() {
                   <div key={c.id} className="flex items-center justify-between p-3">
                     <div>
                       <div className="text-xs font-bold text-slate-800">{c.code}</div>
-                      <div className="text-[10px] text-slate-500">{c.title} · {c.unit}u</div>
+                      <div className="text-[10px] text-slate-500">{c.title} · {c.unit}u · {c.lecturer_name}</div>
+                      <div className="text-[10px] text-blue-500">
+                        {c.cohorts_detail?.map(cd => cd.label).join(', ') || 'No cohorts'}
+                      </div>
                     </div>
                     <button onClick={() => handleDeleteCourse(c.id)}
                       className="px-2 py-1 text-[10px] font-bold bg-red-50 text-red-600 border border-red-200 rounded">DEL</button>
@@ -311,7 +385,9 @@ export default function OfficerDashboard() {
         {tab === 'REQUESTS' && (
           <div className="max-w-2xl">
             <div className="bg-white border border-slate-200 rounded-lg shadow-sm">
-              <div className="p-3 border-b border-slate-100 text-xs font-bold text-slate-700">ADJUSTMENT REQUESTS ({requests.length})</div>
+              <div className="p-3 border-b border-slate-100 text-xs font-bold text-slate-700">
+                ADJUSTMENT REQUESTS ({requests.length})
+              </div>
               {requests.length === 0 ? (
                 <div className="p-8 text-center text-xs text-slate-400">No requests</div>
               ) : (
