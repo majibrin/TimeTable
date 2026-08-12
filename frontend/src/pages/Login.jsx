@@ -20,7 +20,7 @@ export default function Login() {
     const result = await loginUser(username, password, setUser);
 
     if (result.success) {
-      navigate('/dashboard');
+      navigate('/');
     } else {
       setError(result.error);
       setSubmitting(false);

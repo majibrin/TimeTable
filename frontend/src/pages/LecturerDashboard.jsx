@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import API from '../api/client';
 import TimetableGrid from '../components/TimetableGrid';
+import { exportTimetablePdf } from '../utils/exportPdf';
 
 export default function LecturerDashboard() {
   const [schedules, setSchedules] = useState([]);
@@ -67,6 +68,14 @@ export default function LecturerDashboard() {
     }
   };
 
+  const handleExport = () => {
+    exportTimetablePdf(schedules, {
+      title: 'My Teaching Timetable',
+      subtitle: 'Lecturer Schedule — Faculty of Science, GSU',
+      filename: 'my-timetable'
+    });
+  };
+
   const handleLogout = () => { localStorage.removeItem('token'); window.location.href = '/login'; };
 
   return (
@@ -76,6 +85,7 @@ export default function LecturerDashboard() {
           <h1 className="text-sm font-bold text-slate-900">LECTURER</h1>
           <p className="text-[10px] text-slate-400">My Timetable</p>
         </div>
+        <button onClick={handleExport} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded">EXPORT PDF</button>
         <button onClick={handleLogout} className="px-3 py-1.5 border border-red-200 text-red-600 text-xs font-bold rounded">LOGOUT</button>
       </div>
 

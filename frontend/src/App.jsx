@@ -26,6 +26,7 @@ const AppRoutes = () => {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/" element={<ProtectedRoute><RoleRouter /></ProtectedRoute>} />
       <Route path="/superadmin" element={<ProtectedRoute allowedRoles={['SUPER_ADMIN']}><SuperAdminDashboard /></ProtectedRoute>} />
       <Route path="/officer" element={<ProtectedRoute allowedRoles={['TIMETABLE_OFFICER','SUPER_ADMIN']}><OfficerDashboard /></ProtectedRoute>} />
       <Route path="/lecturer" element={<ProtectedRoute allowedRoles={['LECTURER']}><LecturerDashboard /></ProtectedRoute>} />

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import API from '../api/client';
 import TimetableGrid from '../components/TimetableGrid';
+import { exportTimetablePdf } from '../utils/exportPdf';
 
 const DAYS_ORDER = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const DAY_MAP = { 0: 'SUN', 1: 'MON', 2: 'TUE', 3: 'WED', 4: 'THU', 5: 'FRI', 6: 'SAT' };
@@ -106,6 +107,14 @@ export default function StudentDashboard() {
   useEffect(() => { fetchCohorts(); }, []);
   useEffect(() => { fetchTimetable(); }, [fetchTimetable]);
 
+  const handleExport = () => {
+    exportTimetablePdf(schedules, {
+      title: 'My Class Timetable',
+      subtitle: 'Student Schedule — Faculty of Science, GSU',
+      filename: 'my-class-timetable'
+    });
+  };
+
   const handleLogout = () => { localStorage.removeItem('token'); window.location.href = '/login'; };
 
   return (
@@ -115,6 +124,7 @@ export default function StudentDashboard() {
           <h1 className="text-sm font-bold text-slate-900">STUDENT</h1>
           <p className="text-[10px] text-slate-400">Faculty of Science — GSU</p>
         </div>
+        <button onClick={handleExport} disabled={!schedules.length} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded disabled:opacity-40">EXPORT PDF</button>
         <button onClick={handleLogout} className="px-3 py-1.5 border border-red-200 text-red-600 text-xs font-bold rounded">LOGOUT</button>
       </div>
 
