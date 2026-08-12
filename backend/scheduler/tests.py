@@ -1,3 +1,471 @@
+import datetime
 from django.test import TestCase
+from django.contrib.auth import get_user_model
+from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
 
-# Create your tests here.
+from scheduler.models import (
+    Faculty, Department, LevelCohort, Course, Venue,
+    AcademicSession, Semester, SessionSlot, AdjustmentRequest,
+    ConstraintSetting,
+)
+from scheduler.engine import TimetableEngine
+
+User = get_user_model()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Shared fixture helper
+# ─────────────────────────────────────────────────────────────────────────
+
+class BaseAPITestCase(TestCase):
+    """Common setup used across most test classes: faculty/department/
+    cohort/venue scaffolding plus one user per role, with helper to
+    obtain an authenticated APIClient for a given user."""
+
+    def setUp(self):
+        self.client = APIClient()
+
+        self.faculty = Faculty.objects.create(name="Faculty of Science", code="SCI")
+        self.department = Department.objects.create(
+            name="Computer Science", code="CSC", faculty=self.faculty
+        )
+        self.cohort_100 = LevelCohort.objects.create(
+            department=self.department, level="100L", student_count=80
+        )
+        self.venue = Venue.objects.create(name="LT1", capacity=150, faculty=self.faculty)
+
+        self.super_admin = User.objects.create_user(
+            username="admin1", password="StrongPass123", role=User.RoleChoices.SUPER_ADMIN
+        )
+        self.officer = User.objects.create_user(
+            username="officer1", password="StrongPass123", role=User.RoleChoices.TIMETABLE_OFFICER
+        )
+        self.lecturer = User.objects.create_user(
+            username="lect1", password="StrongPass123",
+            role=User.RoleChoices.LECTURER, department=self.department
+        )
+        self.student = User.objects.create_user(
+            username="stud1", password="StrongPass123",
+            role=User.RoleChoices.STUDENT, department=self.department
+        )
+
+    def auth_client(self, user):
+        client = APIClient()
+        refresh = RefreshToken.for_user(user)
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+        return client
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 4.7.1 Authentication Testing
+# ─────────────────────────────────────────────────────────────────────────
+
+class AuthenticationTests(BaseAPITestCase):
+
+    def test_login_with_valid_credentials_returns_token_and_role(self):
+        response = self.client.post("/auth/login/", {
+            "username": "officer1", "password": "StrongPass123"
+        }, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("access", response.data)
+        self.assertIn("refresh", response.data)
+        self.assertEqual(response.data["role"], "TIMETABLE_OFFICER")
+
+    def test_login_with_invalid_password_is_rejected(self):
+        response = self.client.post("/auth/login/", {
+            "username": "officer1", "password": "WrongPassword"
+        }, format="json")
+        self.assertEqual(response.status_code, 401)
+
+    def test_login_with_nonexistent_user_is_rejected(self):
+        response = self.client.post("/auth/login/", {
+            "username": "ghost", "password": "whatever"
+        }, format="json")
+        self.assertEqual(response.status_code, 401)
+
+    def test_unauthenticated_request_to_protected_endpoint_is_rejected(self):
+        response = self.client.get("/users/")
+        self.assertEqual(response.status_code, 403)
+
+    def test_authenticated_index_returns_user_profile(self):
+        client = self.auth_client(self.officer)
+        response = client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["username"], "officer1")
+        self.assertEqual(response.data["role"], "TIMETABLE_OFFICER")
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 4.7.2 User Management Testing
+# ─────────────────────────────────────────────────────────────────────────
+
+class UserManagementTests(BaseAPITestCase):
+
+    def test_super_admin_can_create_user(self):
+        client = self.auth_client(self.super_admin)
+        response = client.post("/users/", {
+            "username": "newlect", "email": "newlect@example.com",
+            "first_name": "New", "last_name": "Lecturer",
+            "role": "LECTURER", "password": "SomePass123",
+            "department": self.department.id
+        }, format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(User.objects.filter(username="newlect").exists())
+
+    def test_duplicate_username_is_rejected(self):
+        client = self.auth_client(self.super_admin)
+        response = client.post("/users/", {
+            "username": "officer1",
+            "email": "dupe@example.com",
+            "first_name": "Dup", "last_name": "Licate",
+            "role": "LECTURER", "password": "SomePass123",
+        }, format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_missing_required_field_is_rejected(self):
+        client = self.auth_client(self.super_admin)
+        response = client.post("/users/", {
+            "email": "nouser@example.com",
+            "role": "LECTURER", "password": "SomePass123",
+        }, format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_non_admin_cannot_create_user(self):
+        client = self.auth_client(self.officer)
+        response = client.post("/users/", {
+            "username": "sneaky", "email": "sneaky@example.com",
+            "first_name": "S", "last_name": "N",
+            "role": "STUDENT", "password": "SomePass123",
+        }, format="json")
+        self.assertEqual(response.status_code, 403)
+
+    def test_super_admin_can_deactivate_user(self):
+        client = self.auth_client(self.super_admin)
+        response = client.patch(f"/users/{self.lecturer.id}/", {
+            "is_active": False
+        }, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.lecturer.refresh_from_db()
+        self.assertFalse(self.lecturer.is_active)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 4.7.3 Course and Venue Management Testing
+# ─────────────────────────────────────────────────────────────────────────
+
+class CourseVenueManagementTests(BaseAPITestCase):
+
+    def test_officer_can_create_course_with_cohort(self):
+        client = self.auth_client(self.officer)
+        response = client.post("/courses/", {
+            "title": "Data Structures", "code": "CSC201", "unit": 3,
+            "department": self.department.id,
+            "cohorts": [self.cohort_100.id],
+            "lecturer": self.lecturer.id,
+        }, format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(Course.objects.filter(code="CSC201").exists())
+
+    def test_officer_can_update_course(self):
+        course = Course.objects.create(title="Old", code="CSC100", unit=2, department=self.department)
+        course.cohorts.add(self.cohort_100)
+        client = self.auth_client(self.officer)
+        response = client.patch(f"/courses/{course.id}/", {"title": "Updated Title"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        course.refresh_from_db()
+        self.assertEqual(course.title, "Updated Title")
+
+    def test_officer_can_delete_course(self):
+        course = Course.objects.create(title="ToDelete", code="CSC999", unit=1, department=self.department)
+        client = self.auth_client(self.officer)
+        response = client.delete(f"/courses/{course.id}/")
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Course.objects.filter(id=course.id).exists())
+
+    def test_officer_can_create_venue(self):
+        client = self.auth_client(self.officer)
+        response = client.post("/venues/", {"name": "LT2", "capacity": 200}, format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(Venue.objects.filter(name="LT2").exists())
+
+    def test_student_cannot_create_course(self):
+        client = self.auth_client(self.student)
+        response = client.post("/courses/", {
+            "title": "Hack", "code": "HAX101", "unit": 1,
+            "department": self.department.id, "cohorts": [self.cohort_100.id],
+        }, format="json")
+        self.assertEqual(response.status_code, 403)
+
+    def test_csv_import_creates_courses_and_reports_errors(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        csv_content = (
+            "code,title,unit,department,cohorts,lecturer\n"
+            f"CSC301,Algorithms,3,{self.department.name},100L,{self.lecturer.username}\n"
+            "CSC999,BadRow,2,Nonexistent Department,100L,\n"
+        )
+        upload = SimpleUploadedFile("courses.csv", csv_content.encode("utf-8"), content_type="text/csv")
+        client = self.auth_client(self.officer)
+        response = client.post("/import/courses/", {"file": upload}, format="multipart")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Course.objects.filter(code="CSC301").exists())
+        self.assertGreaterEqual(len(response.json()["errors"]), 1)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 4.7.4 Timetable Generation Testing
+# ─────────────────────────────────────────────────────────────────────────
+
+class TimetableGenerationTests(BaseAPITestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.session = AcademicSession.objects.create(name="2025/2026", is_active=True)
+        self.semester = Semester.objects.create(
+            session=self.session, name="FIRST", is_active=True
+        )
+        self.course = Course.objects.create(
+            title="Intro to Programming", code="CSC101", unit=2,
+            department=self.department, lecturer=self.lecturer
+        )
+        self.course.cohorts.add(self.cohort_100)
+
+    def test_generation_requires_officer_or_admin_role(self):
+        client = self.auth_client(self.student)
+        response = client.post("/generate/", {}, format="json")
+        self.assertEqual(response.status_code, 403)
+
+    def test_generation_fails_with_no_venues(self):
+        Venue.objects.all().delete()
+        client = self.auth_client(self.officer)
+        response = client.post("/generate/", {}, format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_generation_produces_session_slots(self):
+        client = self.auth_client(self.officer)
+        response = client.post("/generate/", {
+            "initial_temperature": 100.0,
+            "cooling_rate": 0.8,
+            "min_temperature": 1.0,
+        }, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("final_energy_score", response.json())
+        self.assertGreater(SessionSlot.objects.count(), 0)
+
+    def test_generated_slots_are_linked_to_active_semester(self):
+        client = self.auth_client(self.officer)
+        client.post("/generate/", {
+            "initial_temperature": 100.0, "cooling_rate": 0.8, "min_temperature": 1.0
+        }, format="json")
+        slot = SessionSlot.objects.first()
+        self.assertEqual(slot.semester, self.semester)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 4.7.5 Constraint Validation Testing (direct engine unit tests)
+# ─────────────────────────────────────────────────────────────────────────
+
+class ConstraintValidationTests(TestCase):
+    """Exercises TimetableEngine.calculate_energy directly with crafted
+    states to confirm each hard constraint contributes its penalty weight."""
+
+    def setUp(self):
+        self.engine = TimetableEngine()
+        self.venue_caps = {1: 100}
+        self.cohort_caps = {1: 50}
+
+    def _base_session(self, **overrides):
+        base = {
+            'course_id': 1, 'cohort_ids': [1], 'lecturer_id': 1,
+            'venue_id': 1, 'day_index': 0, 'time_slot_index': 0, 'duration': 1,
+        }
+        base.update(overrides)
+        return base
+
+    def test_lecturer_clash_is_penalized(self):
+        state = [
+            self._base_session(course_id=1),
+            self._base_session(course_id=2, venue_id=2),
+        ]
+        self.venue_caps[2] = 100
+        energy = self.engine.calculate_energy(state, self.venue_caps, self.cohort_caps)
+        self.assertGreaterEqual(energy, self.engine.w['lecturer_clash'])
+
+    def test_venue_clash_is_penalized(self):
+        state = [
+            self._base_session(course_id=1, lecturer_id=1),
+            self._base_session(course_id=2, lecturer_id=2),
+        ]
+        energy = self.engine.calculate_energy(state, self.venue_caps, self.cohort_caps)
+        self.assertGreaterEqual(energy, self.engine.w['venue_clash'])
+
+    def test_cohort_clash_is_penalized(self):
+        state = [
+            self._base_session(course_id=1, lecturer_id=1, venue_id=1),
+            self._base_session(course_id=2, lecturer_id=2, venue_id=2),
+        ]
+        self.venue_caps[2] = 100
+        energy = self.engine.calculate_energy(state, self.venue_caps, self.cohort_caps)
+        self.assertGreaterEqual(energy, self.engine.w['cohort_clash'])
+
+    def test_no_conflicts_yields_zero_energy(self):
+        state = [
+            self._base_session(course_id=1, day_index=0, time_slot_index=0),
+            self._base_session(course_id=2, lecturer_id=2, venue_id=2,
+                                cohort_ids=[2], day_index=1, time_slot_index=0),
+        ]
+        self.venue_caps[2] = 100
+        self.cohort_caps[2] = 40
+        energy = self.engine.calculate_energy(state, self.venue_caps, self.cohort_caps)
+        self.assertEqual(energy, 0)
+
+    def test_venue_capacity_violation_is_penalized(self):
+        state = [self._base_session(cohort_ids=[1])]
+        small_venue_caps = {1: 10}
+        energy = self.engine.calculate_energy(state, small_venue_caps, self.cohort_caps)
+        self.assertGreaterEqual(energy, self.engine.w['venue_capacity'])
+
+    def test_saturday_lecture_incurs_soft_penalty_only(self):
+        state = [self._base_session(day_index=5)]
+        energy = self.engine.calculate_energy(state, self.venue_caps, self.cohort_caps)
+        self.assertEqual(energy, self.engine.w['saturday_lectures'])
+
+    def test_initial_state_never_selects_break_slot(self):
+        sessions_data = [
+            {'course_id': 1, 'cohort_ids': [1], 'lecturer_id': 1, 'duration': 1}
+        ]
+        for _ in range(50):
+            state = self.engine._generate_initial_state(sessions_data, [1])
+            self.assertNotEqual(state[0]['time_slot_index'], 5)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 4.7.6 Timetable Publishing Testing
+# ─────────────────────────────────────────────────────────────────────────
+
+class TimetablePublishingTests(BaseAPITestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.course = Course.objects.create(
+            title="Intro to Programming", code="CSC101", unit=2,
+            department=self.department, lecturer=self.lecturer
+        )
+        self.slot = SessionSlot.objects.create(
+            course=self.course, venue=self.venue, lecturer=self.lecturer,
+            cohort=self.cohort_100, day="MON",
+            start_time=datetime.time(9, 0), duration=1, is_published=False
+        )
+
+    def test_unpublished_slot_not_visible_to_student_filter(self):
+        client = self.auth_client(self.student)
+        response = client.get("/slots/?published=true")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 0)
+
+    def test_publish_marks_slots_published(self):
+        client = self.auth_client(self.officer)
+        response = client.post("/publish/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.slot.refresh_from_db()
+        self.assertTrue(self.slot.is_published)
+
+    def test_published_slot_visible_after_publish(self):
+        client = self.auth_client(self.officer)
+        client.post("/publish/", {}, format="json")
+        student_client = self.auth_client(self.student)
+        response = student_client.get(f"/slots/?published=true&cohort={self.cohort_100.id}")
+        self.assertEqual(len(response.data), 1)
+
+    def test_non_officer_cannot_publish(self):
+        client = self.auth_client(self.lecturer)
+        response = client.post("/publish/", {}, format="json")
+        self.assertEqual(response.status_code, 403)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 4.7.7 Adjustment Request Testing
+# ─────────────────────────────────────────────────────────────────────────
+
+class AdjustmentRequestTests(BaseAPITestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.course = Course.objects.create(
+            title="Intro to Programming", code="CSC101", unit=2,
+            department=self.department, lecturer=self.lecturer
+        )
+        self.venue2 = Venue.objects.create(name="LT3", capacity=100, faculty=self.faculty)
+        self.slot = SessionSlot.objects.create(
+            course=self.course, venue=self.venue, lecturer=self.lecturer,
+            cohort=self.cohort_100, day="MON",
+            start_time=datetime.time(9, 0), duration=1, is_published=True
+        )
+
+    def test_lecturer_can_submit_adjustment_request(self):
+        client = self.auth_client(self.lecturer)
+        response = client.post("/requests/", {
+            "session_slot": self.slot.id,
+            "reason": "Clashes with a departmental meeting",
+            "proposed_day": "TUE",
+            "proposed_venue": self.venue2.id,
+        }, format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(AdjustmentRequest.objects.filter(session_slot=self.slot).exists())
+
+    def test_request_defaults_to_pending_and_is_linked_to_requesting_lecturer(self):
+        client = self.auth_client(self.lecturer)
+        client.post("/requests/", {
+            "session_slot": self.slot.id, "reason": "Need a bigger venue",
+        }, format="json")
+        req = AdjustmentRequest.objects.get(session_slot=self.slot)
+        self.assertEqual(req.status, "PENDING")
+        self.assertEqual(req.lecturer, self.lecturer)
+
+    def test_officer_can_approve_request_and_slot_is_updated(self):
+        req = AdjustmentRequest.objects.create(
+            session_slot=self.slot, lecturer=self.lecturer,
+            reason="Room too small", proposed_venue=self.venue2,
+        )
+        client = self.auth_client(self.officer)
+        response = client.post(f"/requests/{req.id}/review/", {
+            "decision": "APPROVED", "note": "Approved, venue changed"
+        }, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.slot.refresh_from_db()
+        self.assertEqual(self.slot.venue, self.venue2)
+        req.refresh_from_db()
+        self.assertEqual(req.status, "APPROVED")
+
+    def test_officer_can_reject_request_and_slot_is_unchanged(self):
+        req = AdjustmentRequest.objects.create(
+            session_slot=self.slot, lecturer=self.lecturer,
+            reason="Prefer a different day", proposed_day="WED",
+        )
+        original_day = self.slot.day
+        client = self.auth_client(self.officer)
+        response = client.post(f"/requests/{req.id}/review/", {
+            "decision": "REJECTED", "note": "Not feasible this semester"
+        }, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.slot.refresh_from_db()
+        self.assertEqual(self.slot.day, original_day)
+        req.refresh_from_db()
+        self.assertEqual(req.status, "REJECTED")
+
+    def test_lecturer_only_sees_own_requests(self):
+        other_lecturer = User.objects.create_user(
+            username="lect2", password="StrongPass123",
+            role=User.RoleChoices.LECTURER, department=self.department
+        )
+        AdjustmentRequest.objects.create(
+            session_slot=self.slot, lecturer=other_lecturer, reason="Other lecturer's request"
+        )
+        AdjustmentRequest.objects.create(
+            session_slot=self.slot, lecturer=self.lecturer, reason="My request"
+        )
+        client = self.auth_client(self.lecturer)
+        response = client.get("/requests/")
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["reason"], "My request")
