@@ -90,7 +90,6 @@ export default function StudentDashboard() {
       const normalized = res.data.map(slot => ({
         course_code: (slot.course_detail || '').split(' - ')[0],
         room: slot.venue_name || 'TBD',
-        lecturer: slot.lecturer_name || 'Unassigned',
         day: (slot.day || 'MON').toUpperCase().substring(0, 3),
         start_time: slot.start_time ? slot.start_time.substring(0, 5) : '08:00',
         duration: parseInt(slot.duration || 1, 10),

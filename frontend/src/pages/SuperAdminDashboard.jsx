@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import API from '../api/client';
 
-const ROLES = ['SUPER_ADMIN', 'TIMETABLE_OFFICER', 'LECTURER', 'STUDENT'];
+const ROLES = ['SUPER_ADMIN', 'TIMETABLE_OFFICER', 'STUDENT'];
 
 export default function SuperAdminDashboard() {
   const [users, setUsers] = useState([]);
@@ -127,10 +127,10 @@ export default function SuperAdminDashboard() {
               </select>
             </div>
 
-            {(form.role === 'LECTURER' || form.role === 'STUDENT') && (
+            {form.role === 'STUDENT' && (
               <div className="col-span-2">
                 <label className="block text-[10px] text-slate-500 mb-1 uppercase">
-                  Department {form.role === 'LECTURER' ? '(required for lecturer)' : '(optional)'}
+                  Department (optional)
                 </label>
                 <select
                   value={form.department}

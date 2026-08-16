@@ -3,18 +3,15 @@ import API from '../api/client';
 import TimetableGrid from '../components/TimetableGrid';
 import { exportTimetablePdf } from '../utils/exportPdf';
 
-const TABS = ['TIMETABLE', 'COURSES', 'VENUES', 'REQUESTS'];
+const TABS = ['TIMETABLE', 'COURSES', 'VENUES'];
 
 export default function OfficerDashboard() {
   const [tab, setTab] = useState('TIMETABLE');
   const [schedules, setSchedules] = useState([]);
   const [courses, setCourses] = useState([]);
   const [venues, setVenues] = useState([]);
-  const [lecturers, setLecturers] = useState([]);
-  const [allLecturers, setAllLecturers] = useState([]);
   const [cohorts, setCohorts] = useState([]);
   const [departments, setDepartments] = useState([]);
-  const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -24,36 +21,29 @@ export default function OfficerDashboard() {
     code: '', title: '', unit: 2,
     department: '',
     selectedCohorts: [],
-    lecturer: ''
   });
   const [venueForm, setVenueForm] = useState({ name: '', capacity: '' });
 
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [slotsRes, coursesRes, venuesRes, lecturersRes, cohortsRes, requestsRes, deptsRes] = await Promise.all([
+      const [slotsRes, coursesRes, venuesRes, cohortsRes, deptsRes] = await Promise.all([
         API.get('slots/'),
         API.get('courses/'),
         API.get('venues/'),
-        API.get('lecturers/'),
         API.get('cohorts/'),
-        API.get('requests/'),
         API.get('departments/'),
       ]);
       setSchedules(slotsRes.data.map(slot => ({
         course_code: (slot.course_detail || '').split(' - ')[0] || `ID:${slot.course}`,
         room: slot.venue_name || 'TBD',
-        lecturer: slot.lecturer_name || 'Unassigned',
         day: (slot.day || 'MON').toUpperCase().substring(0, 3),
         start_time: slot.start_time ? slot.start_time.substring(0, 5) : '08:00',
         duration: parseInt(slot.duration || 1, 10),
       })));
       setCourses(coursesRes.data);
       setVenues(venuesRes.data);
-      setAllLecturers(lecturersRes.data);
-      setLecturers(lecturersRes.data);
       setCohorts(cohortsRes.data);
-      setRequests(requestsRes.data);
       setDepartments(deptsRes.data);
     } catch (e) {
       setError('Failed to load data');
@@ -63,16 +53,6 @@ export default function OfficerDashboard() {
   };
 
   useEffect(() => { fetchAll(); }, []);
-
-  // Filter lecturers when department changes
-  useEffect(() => {
-    if (courseForm.department) {
-      setLecturers(allLecturers.filter(l => String(l.department_id) === String(courseForm.department)));
-    } else {
-      setLecturers(allLecturers);
-    }
-    setCourseForm(f => ({ ...f, lecturer: '' }));
-  }, [courseForm.department]);
 
   const msg = (ok, text) => {
     if (ok) setSuccess(text); else setError(text);
@@ -133,10 +113,9 @@ export default function OfficerDashboard() {
         unit: parseInt(courseForm.unit),
         department: courseForm.department ? parseInt(courseForm.department) : null,
         cohorts: courseForm.selectedCohorts,
-        lecturer: courseForm.lecturer ? parseInt(courseForm.lecturer) : null,
       });
       msg(true, 'Course created');
-      setCourseForm({ code: '', title: '', unit: 2, department: '', selectedCohorts: [], lecturer: '' });
+      setCourseForm({ code: '', title: '', unit: 2, department: '', selectedCohorts: [] });
       fetchAll();
     } catch (e) {
       msg(false, e.response?.data?.code?.[0] || JSON.stringify(e.response?.data) || 'Failed to create course');
@@ -174,16 +153,6 @@ export default function OfficerDashboard() {
       fetchAll();
     } catch (e) {
       msg(false, 'Delete failed — venue may be in use');
-    }
-  };
-
-  const handleReview = async (id, decision) => {
-    try {
-      await API.post(`requests/${id}/review/`, { decision });
-      msg(true, `Request ${decision}`);
-      fetchAll();
-    } catch (e) {
-      msg(false, 'Review failed');
     }
   };
 
@@ -275,7 +244,7 @@ export default function OfficerDashboard() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[10px] text-slate-500 mb-1">DEPARTMENT (for lecturer filter)</label>
+                    <label className="block text-[10px] text-slate-500 mb-1">DEPARTMENT</label>
                     <select value={courseForm.department} onChange={e => setCourseForm({...courseForm, department: e.target.value})}
                       className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400">
                       <option value="">-- All Departments --</option>
@@ -303,19 +272,6 @@ export default function OfficerDashboard() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[10px] text-slate-500 mb-1">
-                    LECTURER {courseForm.department ? `(${lecturers.length} in dept)` : '(all)'}
-                  </label>
-                  <select value={courseForm.lecturer} onChange={e => setCourseForm({...courseForm, lecturer: e.target.value})}
-                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400">
-                    <option value="">-- Unassigned --</option>
-                    {lecturers.map(l => (
-                      <option key={l.id} value={l.id}>{l.first_name} {l.last_name} ({l.username})</option>
-                    ))}
-                  </select>
-                </div>
-
                 <button type="submit" className="w-full py-2 bg-slate-900 text-white text-xs font-bold rounded hover:bg-slate-700">
                   ADD COURSE
                 </button>
@@ -323,7 +279,7 @@ export default function OfficerDashboard() {
 
               <div className="mt-3 pt-3 border-t border-slate-100">
                 <label className="block text-[10px] text-slate-500 mb-1">
-                  BULK IMPORT CSV (code, title, unit, department, cohorts, lecturer)
+                  BULK IMPORT CSV (code, title, unit, department, cohorts)
                   <span className="text-slate-400 ml-1">— cohorts column: semicolon-separated levels e.g. 100L;200L</span>
                 </label>
                 <input type="file" accept=".csv" onChange={e => handleImportCSV(e, 'import/courses/')}
@@ -338,7 +294,7 @@ export default function OfficerDashboard() {
                   <div key={c.id} className="flex items-center justify-between p-3">
                     <div>
                       <div className="text-xs font-bold text-slate-800">{c.code}</div>
-                      <div className="text-[10px] text-slate-500">{c.title} · {c.unit}u · {c.lecturer_name}</div>
+                      <div className="text-[10px] text-slate-500">{c.title} · {c.unit}u</div>
                       <div className="text-[10px] text-blue-500">
                         {c.cohorts_detail?.map(cd => cd.label).join(', ') || 'No cohorts'}
                       </div>
@@ -391,42 +347,6 @@ export default function OfficerDashboard() {
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
-        )}
-
-        {tab === 'REQUESTS' && (
-          <div className="max-w-2xl">
-            <div className="bg-white border border-slate-200 rounded-lg shadow-sm">
-              <div className="p-3 border-b border-slate-100 text-xs font-bold text-slate-700">
-                ADJUSTMENT REQUESTS ({requests.length})
-              </div>
-              {requests.length === 0 ? (
-                <div className="p-8 text-center text-xs text-slate-400">No requests</div>
-              ) : (
-                <div className="divide-y divide-slate-100">
-                  {requests.map(r => (
-                    <div key={r.id} className="p-3">
-                      <div className="flex justify-between items-start mb-1">
-                        <div className="text-xs font-bold text-slate-800">{r.slot_detail}</div>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${r.status === 'PENDING' ? 'bg-amber-50 text-amber-600' : r.status === 'APPROVED' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
-                          {r.status}
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-slate-500 mb-1">By: {r.lecturer_name}</div>
-                      <div className="text-[10px] text-slate-600 mb-2">{r.reason}</div>
-                      {r.status === 'PENDING' && (
-                        <div className="flex gap-2">
-                          <button onClick={() => handleReview(r.id, 'APPROVED')}
-                            className="px-3 py-1 text-[10px] font-bold bg-green-50 text-green-600 border border-green-200 rounded">APPROVE</button>
-                          <button onClick={() => handleReview(r.id, 'REJECTED')}
-                            className="px-3 py-1 text-[10px] font-bold bg-red-50 text-red-600 border border-red-200 rounded">REJECT</button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         )}

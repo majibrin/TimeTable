@@ -41,7 +41,7 @@ export function exportTimetablePdf(schedules, meta = {}) {
       } else {
         row.push(
           cellSessions
-            .map(s => `${s.course_code}\n${s.room || 'TBD'}${s.lecturer ? ' · ' + s.lecturer : ''}`)
+            .map(s => `${s.course_code}\n${s.room || 'TBD'}`)
             .join('\n---\n')
         );
       }
