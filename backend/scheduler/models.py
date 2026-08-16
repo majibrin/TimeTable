@@ -1,5 +1,4 @@
 from django.db import models
-from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 
 
@@ -24,7 +23,6 @@ class User(AbstractUser):
     class RoleChoices(models.TextChoices):
         SUPER_ADMIN = 'SUPER_ADMIN', 'Super Admin'
         TIMETABLE_OFFICER = 'TIMETABLE_OFFICER', 'Timetable Officer'
-        LECTURER = 'LECTURER', 'Lecturer'
         STUDENT = 'STUDENT', 'Student'
 
     role = models.CharField(
@@ -125,14 +123,6 @@ class Course(models.Model):
         blank=True
     )
     cohorts = models.ManyToManyField(LevelCohort, related_name='courses', blank=True)
-    lecturer = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        limit_choices_to={'role': 'LECTURER'},
-        related_name='courses'
-    )
 
     def __str__(self):
         return f"{self.code} - {self.title} ({self.unit} C.U)"
@@ -158,28 +148,6 @@ class Venue(models.Model):
         return f"{self.name} (Cap: {self.capacity})"
 
 
-class LecturerAvailability(models.Model):
-    DAY_CHOICES = [
-        ("MON", "Monday"), ("TUE", "Tuesday"), ("WED", "Wednesday"),
-        ("THU", "Thursday"), ("FRI", "Friday"), ("SAT", "Saturday"),
-    ]
-    lecturer = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name='availability'
-    )
-    day = models.CharField(max_length=3, choices=DAY_CHOICES)
-    time_slot = models.ForeignKey(TimeSlot, on_delete=models.CASCADE)
-    is_available = models.BooleanField(default=True)
-
-    class Meta:
-        unique_together = ('lecturer', 'day', 'time_slot')
-
-    def __str__(self):
-        status = "Available" if self.is_available else "Unavailable"
-        return f"{self.lecturer.username} — {self.day} {self.time_slot.label} ({status})"
-
-
 class ConstraintSetting(models.Model):
     class TypeChoices(models.TextChoices):
         HARD = 'HARD', 'Hard Constraint'
@@ -198,13 +166,6 @@ class ConstraintSetting(models.Model):
 class SessionSlot(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE)
     venue = models.ForeignKey(Venue, on_delete=models.RESTRICT, null=True, blank=True)
-    lecturer = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.RESTRICT,
-        null=True,
-        blank=True,
-        related_name='session_slots'
-    )
     cohort = models.ForeignKey(
         LevelCohort,
         on_delete=models.RESTRICT,
@@ -232,37 +193,3 @@ class SessionSlot(models.Model):
     def __str__(self):
         venue_name = self.venue.name if self.venue else "TBD"
         return f"{self.course.code} | {venue_name} ({self.day} {self.start_time})"
-
-
-class AdjustmentRequest(models.Model):
-    class StatusChoices(models.TextChoices):
-        PENDING = 'PENDING', 'Pending'
-        APPROVED = 'APPROVED', 'Approved'
-        REJECTED = 'REJECTED', 'Rejected'
-
-    session_slot = models.ForeignKey(SessionSlot, on_delete=models.CASCADE, related_name='adjustment_requests')
-    lecturer = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name='adjustment_requests'
-    )
-    reason = models.TextField()
-    proposed_day = models.CharField(max_length=3, null=True, blank=True)
-    proposed_start_time = models.TimeField(null=True, blank=True)
-    proposed_venue = models.ForeignKey(
-        Venue,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True
-    )
-    status = models.CharField(
-        max_length=10,
-        choices=StatusChoices.choices,
-        default=StatusChoices.PENDING
-    )
-    officer_note = models.TextField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"Request by {self.lecturer.username} for {self.session_slot} [{self.status}]"
