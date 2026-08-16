@@ -6,7 +6,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from scheduler.models import (
     Faculty, Department, LevelCohort, Course, Venue,
-    AcademicSession, Semester, SessionSlot, AdjustmentRequest,
+    AcademicSession, Semester, SessionSlot,
     ConstraintSetting,
 )
 from scheduler.engine import TimetableEngine
@@ -40,10 +40,6 @@ class BaseAPITestCase(TestCase):
         )
         self.officer = User.objects.create_user(
             username="officer1", password="StrongPass123", role=User.RoleChoices.TIMETABLE_OFFICER
-        )
-        self.lecturer = User.objects.create_user(
-            username="lect1", password="StrongPass123",
-            role=User.RoleChoices.LECTURER, department=self.department
         )
         self.student = User.objects.create_user(
             username="stud1", password="StrongPass123",
@@ -105,13 +101,13 @@ class UserManagementTests(BaseAPITestCase):
     def test_super_admin_can_create_user(self):
         client = self.auth_client(self.super_admin)
         response = client.post("/users/", {
-            "username": "newlect", "email": "newlect@example.com",
-            "first_name": "New", "last_name": "Lecturer",
-            "role": "LECTURER", "password": "SomePass123",
+            "username": "newstud", "email": "newstud@example.com",
+            "first_name": "New", "last_name": "Student",
+            "role": "STUDENT", "password": "SomePass123",
             "department": self.department.id
         }, format="json")
         self.assertEqual(response.status_code, 201)
-        self.assertTrue(User.objects.filter(username="newlect").exists())
+        self.assertTrue(User.objects.filter(username="newstud").exists())
 
     def test_duplicate_username_is_rejected(self):
         client = self.auth_client(self.super_admin)
@@ -119,7 +115,7 @@ class UserManagementTests(BaseAPITestCase):
             "username": "officer1",
             "email": "dupe@example.com",
             "first_name": "Dup", "last_name": "Licate",
-            "role": "LECTURER", "password": "SomePass123",
+            "role": "STUDENT", "password": "SomePass123",
         }, format="json")
         self.assertEqual(response.status_code, 400)
 
@@ -127,7 +123,7 @@ class UserManagementTests(BaseAPITestCase):
         client = self.auth_client(self.super_admin)
         response = client.post("/users/", {
             "email": "nouser@example.com",
-            "role": "LECTURER", "password": "SomePass123",
+            "role": "STUDENT", "password": "SomePass123",
         }, format="json")
         self.assertEqual(response.status_code, 400)
 
@@ -142,12 +138,12 @@ class UserManagementTests(BaseAPITestCase):
 
     def test_super_admin_can_deactivate_user(self):
         client = self.auth_client(self.super_admin)
-        response = client.patch(f"/users/{self.lecturer.id}/", {
+        response = client.patch(f"/users/{self.student.id}/", {
             "is_active": False
         }, format="json")
         self.assertEqual(response.status_code, 200)
-        self.lecturer.refresh_from_db()
-        self.assertFalse(self.lecturer.is_active)
+        self.student.refresh_from_db()
+        self.assertFalse(self.student.is_active)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -162,7 +158,6 @@ class CourseVenueManagementTests(BaseAPITestCase):
             "title": "Data Structures", "code": "CSC201", "unit": 3,
             "department": self.department.id,
             "cohorts": [self.cohort_100.id],
-            "lecturer": self.lecturer.id,
         }, format="json")
         self.assertEqual(response.status_code, 201)
         self.assertTrue(Course.objects.filter(code="CSC201").exists())
@@ -201,9 +196,9 @@ class CourseVenueManagementTests(BaseAPITestCase):
         from django.core.files.uploadedfile import SimpleUploadedFile
 
         csv_content = (
-            "code,title,unit,department,cohorts,lecturer\n"
-            f"CSC301,Algorithms,3,{self.department.name},100L,{self.lecturer.username}\n"
-            "CSC999,BadRow,2,Nonexistent Department,100L,\n"
+            "code,title,unit,department,cohorts\n"
+            f"CSC301,Algorithms,3,{self.department.name},100L\n"
+            "CSC999,BadRow,2,Nonexistent Department,100L\n"
         )
         upload = SimpleUploadedFile("courses.csv", csv_content.encode("utf-8"), content_type="text/csv")
         client = self.auth_client(self.officer)
@@ -227,7 +222,7 @@ class TimetableGenerationTests(BaseAPITestCase):
         )
         self.course = Course.objects.create(
             title="Intro to Programming", code="CSC101", unit=2,
-            department=self.department, lecturer=self.lecturer
+            department=self.department
         )
         self.course.cohorts.add(self.cohort_100)
 
@@ -277,33 +272,24 @@ class ConstraintValidationTests(TestCase):
 
     def _base_session(self, **overrides):
         base = {
-            'course_id': 1, 'cohort_ids': [1], 'lecturer_id': 1,
+            'course_id': 1, 'cohort_ids': [1],
             'venue_id': 1, 'day_index': 0, 'time_slot_index': 0, 'duration': 1,
         }
         base.update(overrides)
         return base
 
-    def test_lecturer_clash_is_penalized(self):
-        state = [
-            self._base_session(course_id=1),
-            self._base_session(course_id=2, venue_id=2),
-        ]
-        self.venue_caps[2] = 100
-        energy = self.engine.calculate_energy(state, self.venue_caps, self.cohort_caps)
-        self.assertGreaterEqual(energy, self.engine.w['lecturer_clash'])
-
     def test_venue_clash_is_penalized(self):
         state = [
-            self._base_session(course_id=1, lecturer_id=1),
-            self._base_session(course_id=2, lecturer_id=2),
+            self._base_session(course_id=1),
+            self._base_session(course_id=2),
         ]
         energy = self.engine.calculate_energy(state, self.venue_caps, self.cohort_caps)
         self.assertGreaterEqual(energy, self.engine.w['venue_clash'])
 
     def test_cohort_clash_is_penalized(self):
         state = [
-            self._base_session(course_id=1, lecturer_id=1, venue_id=1),
-            self._base_session(course_id=2, lecturer_id=2, venue_id=2),
+            self._base_session(course_id=1, venue_id=1),
+            self._base_session(course_id=2, venue_id=2),
         ]
         self.venue_caps[2] = 100
         energy = self.engine.calculate_energy(state, self.venue_caps, self.cohort_caps)
@@ -312,7 +298,7 @@ class ConstraintValidationTests(TestCase):
     def test_no_conflicts_yields_zero_energy(self):
         state = [
             self._base_session(course_id=1, day_index=0, time_slot_index=0),
-            self._base_session(course_id=2, lecturer_id=2, venue_id=2,
+            self._base_session(course_id=2, venue_id=2,
                                 cohort_ids=[2], day_index=1, time_slot_index=0),
         ]
         self.venue_caps[2] = 100
@@ -333,7 +319,7 @@ class ConstraintValidationTests(TestCase):
 
     def test_initial_state_never_selects_break_slot(self):
         sessions_data = [
-            {'course_id': 1, 'cohort_ids': [1], 'lecturer_id': 1, 'duration': 1}
+            {'course_id': 1, 'cohort_ids': [1], 'duration': 1}
         ]
         for _ in range(50):
             state = self.engine._generate_initial_state(sessions_data, [1])
@@ -350,10 +336,10 @@ class TimetablePublishingTests(BaseAPITestCase):
         super().setUp()
         self.course = Course.objects.create(
             title="Intro to Programming", code="CSC101", unit=2,
-            department=self.department, lecturer=self.lecturer
+            department=self.department
         )
         self.slot = SessionSlot.objects.create(
-            course=self.course, venue=self.venue, lecturer=self.lecturer,
+            course=self.course, venue=self.venue,
             cohort=self.cohort_100, day="MON",
             start_time=datetime.time(9, 0), duration=1, is_published=False
         )
@@ -379,93 +365,6 @@ class TimetablePublishingTests(BaseAPITestCase):
         self.assertEqual(len(response.data), 1)
 
     def test_non_officer_cannot_publish(self):
-        client = self.auth_client(self.lecturer)
+        client = self.auth_client(self.student)
         response = client.post("/publish/", {}, format="json")
         self.assertEqual(response.status_code, 403)
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# 4.7.7 Adjustment Request Testing
-# ─────────────────────────────────────────────────────────────────────────
-
-class AdjustmentRequestTests(BaseAPITestCase):
-
-    def setUp(self):
-        super().setUp()
-        self.course = Course.objects.create(
-            title="Intro to Programming", code="CSC101", unit=2,
-            department=self.department, lecturer=self.lecturer
-        )
-        self.venue2 = Venue.objects.create(name="LT3", capacity=100, faculty=self.faculty)
-        self.slot = SessionSlot.objects.create(
-            course=self.course, venue=self.venue, lecturer=self.lecturer,
-            cohort=self.cohort_100, day="MON",
-            start_time=datetime.time(9, 0), duration=1, is_published=True
-        )
-
-    def test_lecturer_can_submit_adjustment_request(self):
-        client = self.auth_client(self.lecturer)
-        response = client.post("/requests/", {
-            "session_slot": self.slot.id,
-            "reason": "Clashes with a departmental meeting",
-            "proposed_day": "TUE",
-            "proposed_venue": self.venue2.id,
-        }, format="json")
-        self.assertEqual(response.status_code, 201)
-        self.assertTrue(AdjustmentRequest.objects.filter(session_slot=self.slot).exists())
-
-    def test_request_defaults_to_pending_and_is_linked_to_requesting_lecturer(self):
-        client = self.auth_client(self.lecturer)
-        client.post("/requests/", {
-            "session_slot": self.slot.id, "reason": "Need a bigger venue",
-        }, format="json")
-        req = AdjustmentRequest.objects.get(session_slot=self.slot)
-        self.assertEqual(req.status, "PENDING")
-        self.assertEqual(req.lecturer, self.lecturer)
-
-    def test_officer_can_approve_request_and_slot_is_updated(self):
-        req = AdjustmentRequest.objects.create(
-            session_slot=self.slot, lecturer=self.lecturer,
-            reason="Room too small", proposed_venue=self.venue2,
-        )
-        client = self.auth_client(self.officer)
-        response = client.post(f"/requests/{req.id}/review/", {
-            "decision": "APPROVED", "note": "Approved, venue changed"
-        }, format="json")
-        self.assertEqual(response.status_code, 200)
-        self.slot.refresh_from_db()
-        self.assertEqual(self.slot.venue, self.venue2)
-        req.refresh_from_db()
-        self.assertEqual(req.status, "APPROVED")
-
-    def test_officer_can_reject_request_and_slot_is_unchanged(self):
-        req = AdjustmentRequest.objects.create(
-            session_slot=self.slot, lecturer=self.lecturer,
-            reason="Prefer a different day", proposed_day="WED",
-        )
-        original_day = self.slot.day
-        client = self.auth_client(self.officer)
-        response = client.post(f"/requests/{req.id}/review/", {
-            "decision": "REJECTED", "note": "Not feasible this semester"
-        }, format="json")
-        self.assertEqual(response.status_code, 200)
-        self.slot.refresh_from_db()
-        self.assertEqual(self.slot.day, original_day)
-        req.refresh_from_db()
-        self.assertEqual(req.status, "REJECTED")
-
-    def test_lecturer_only_sees_own_requests(self):
-        other_lecturer = User.objects.create_user(
-            username="lect2", password="StrongPass123",
-            role=User.RoleChoices.LECTURER, department=self.department
-        )
-        AdjustmentRequest.objects.create(
-            session_slot=self.slot, lecturer=other_lecturer, reason="Other lecturer's request"
-        )
-        AdjustmentRequest.objects.create(
-            session_slot=self.slot, lecturer=self.lecturer, reason="My request"
-        )
-        client = self.auth_client(self.lecturer)
-        response = client.get("/requests/")
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["reason"], "My request")

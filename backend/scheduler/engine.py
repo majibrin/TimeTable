@@ -10,7 +10,6 @@ class TimetableEngine:
 
         # Default weights — overridden by ConstraintSetting from DB
         default = {
-            'lecturer_clash': 1000,
             'venue_clash': 1000,
             'cohort_clash': 1000,
             'venue_capacity': 1000,
@@ -62,7 +61,6 @@ class TimetableEngine:
             state.append({
                 'course_id': s['course_id'],
                 'cohort_ids': s['cohort_ids'],   # list of cohort IDs
-                'lecturer_id': s['lecturer_id'],
                 'venue_id': random.choice(venue_ids) if venue_ids else None,
                 'day_index': random.randint(0, 5),
                 'time_slot_index': random.choice([0,1,2,3,4,6,7,8,9]),
@@ -91,7 +89,6 @@ class TimetableEngine:
         hard_penalty = 0
         soft_penalty = 0
 
-        lecturer_grid = {}
         venue_grid = {}
         cohort_grid = {}
         course_days = {}
@@ -101,7 +98,6 @@ class TimetableEngine:
             t_start = session['time_slot_index']
             dur = session['duration']
             v_id = session['venue_id']
-            l_id = session['lecturer_id']
             cohort_ids = session['cohort_ids']  # list
             cr_id = session['course_id']
 
@@ -131,13 +127,6 @@ class TimetableEngine:
                 # Faculty break hard constraint (index 5 = 13:00)
                 if t == 5:
                     hard_penalty += w['faculty_break']
-
-                # Lecturer clash
-                if l_id:
-                    l_key = (l_id, d, t)
-                    if l_key in lecturer_grid:
-                        hard_penalty += w['lecturer_clash']
-                    lecturer_grid[l_key] = True
 
                 # Venue clash
                 if v_id:

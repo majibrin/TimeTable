@@ -9,7 +9,6 @@ urlpatterns = [
     # Users
     path('users/', views.UserListCreateView.as_view()),
     path('users/<int:pk>/', views.UserDetailView.as_view()),
-    path('lecturers/', views.lecturer_list),
 
     # Faculty / Department / Cohort
     path('faculties/', views.FacultyListCreateView.as_view()),
@@ -44,9 +43,4 @@ urlpatterns = [
     # CSV Import
     path('import/courses/', views.import_courses_csv),
     path('import/venues/', views.import_venues_csv),
-
-    # Adjustment Requests
-    path('requests/', views.AdjustmentRequestListCreateView.as_view()),
-    path('requests/<int:pk>/', views.AdjustmentRequestDetailView.as_view()),
-    path('requests/<int:pk>/review/', views.review_adjustment_request),
 ]

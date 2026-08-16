@@ -9,7 +9,6 @@ class CourseSerializer(serializers.ModelSerializer):
         queryset=LevelCohort.objects.all()
     )
     cohorts_detail = serializers.SerializerMethodField()
-    lecturer_name = serializers.SerializerMethodField()
     department_name = serializers.CharField(source='department.name', read_only=True)
 
     class Meta:
@@ -18,7 +17,6 @@ class CourseSerializer(serializers.ModelSerializer):
             'id', 'title', 'code', 'unit',
             'department', 'department_name',
             'cohorts', 'cohorts_detail',
-            'lecturer', 'lecturer_name'
         ]
 
     def get_cohorts_detail(self, obj):
@@ -26,11 +24,6 @@ class CourseSerializer(serializers.ModelSerializer):
             {'id': c.id, 'label': f"{c.department.name} — {c.level}"}
             for c in obj.cohorts.select_related('department').all()
         ]
-
-    def get_lecturer_name(self, obj):
-        if obj.lecturer:
-            return f"{obj.lecturer.first_name} {obj.lecturer.last_name}".strip() or obj.lecturer.username
-        return "Unassigned"
 
 
 class VenueSerializer(serializers.ModelSerializer):
@@ -74,14 +67,12 @@ class DepartmentWithCohortsSerializer(serializers.ModelSerializer):
 class SessionSlotSerializer(serializers.ModelSerializer):
     course_detail = serializers.SerializerMethodField()
     venue_name = serializers.SerializerMethodField()
-    lecturer_name = serializers.SerializerMethodField()
     cohort_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = SessionSlot
         fields = [
             'id', 'course', 'course_detail',
-            'lecturer', 'lecturer_name',
             'venue', 'venue_name',
             'cohort', 'cohort_detail',
             'day', 'start_time', 'duration', 'is_published'
@@ -93,11 +84,6 @@ class SessionSlotSerializer(serializers.ModelSerializer):
     def get_venue_name(self, obj):
         return obj.venue.name if obj.venue else "TBD"
 
-    def get_lecturer_name(self, obj):
-        if obj.lecturer:
-            return f"{obj.lecturer.first_name} {obj.lecturer.last_name}".strip() or obj.lecturer.username
-        return "Unassigned"
-
     def get_cohort_detail(self, obj):
         if obj.cohort:
             return f"{obj.cohort.department.code} {obj.cohort.level}"
@@ -106,7 +92,6 @@ class SessionSlotSerializer(serializers.ModelSerializer):
     def validate(self, data):
         instance = self.instance
         venue = data.get('venue', getattr(instance, 'venue', None))
-        lecturer = data.get('lecturer', getattr(instance, 'lecturer', None))
         day = data.get('day', getattr(instance, 'day', None))
         start_time = data.get('start_time', getattr(instance, 'start_time', None))
         duration = data.get('duration', getattr(instance, 'duration', 1))
@@ -132,16 +117,5 @@ class SessionSlotSerializer(serializers.ModelSerializer):
                         slot_end = (slot_start + datetime.timedelta(hours=slot.duration)).time()
                         if start_time < slot_end and calculated_end_time > slot.start_time:
                             raise serializers.ValidationError("Venue already occupied during this time.")
-
-            if lecturer and day:
-                lecturer_clash = SessionSlot.objects.filter(day=day, lecturer=lecturer)
-                if instance:
-                    lecturer_clash = lecturer_clash.exclude(id=instance.id)
-                for slot in lecturer_clash:
-                    if slot.start_time:
-                        slot_start = datetime.datetime.combine(datetime.date.today(), slot.start_time)
-                        slot_end = (slot_start + datetime.timedelta(hours=slot.duration)).time()
-                        if start_time < slot_end and calculated_end_time > slot.start_time:
-                            raise serializers.ValidationError("Lecturer already scheduled during this time.")
 
         return data
