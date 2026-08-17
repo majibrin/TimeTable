@@ -17,7 +17,9 @@ class CourseSerializer(serializers.ModelSerializer):
             'id', 'title', 'code', 'unit',
             'department', 'department_name',
             'cohorts', 'cohorts_detail',
+            'status', 'officer_note',
         ]
+        read_only_fields = ['status', 'officer_note']
 
     def get_cohorts_detail(self, obj):
         return [
@@ -32,7 +34,8 @@ class VenueSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Venue
-        fields = ['id', 'name', 'capacity', 'faculty', 'faculty_name', 'department', 'department_name']
+        fields = ['id', 'name', 'capacity', 'faculty', 'faculty_name', 'department', 'department_name', 'status', 'officer_note']
+        read_only_fields = ['status', 'officer_note']
 
     def get_faculty_name(self, obj):
         return obj.faculty.name if obj.faculty else None

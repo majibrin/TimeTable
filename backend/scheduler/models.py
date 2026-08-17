@@ -23,6 +23,7 @@ class User(AbstractUser):
     class RoleChoices(models.TextChoices):
         SUPER_ADMIN = 'SUPER_ADMIN', 'Super Admin'
         TIMETABLE_OFFICER = 'TIMETABLE_OFFICER', 'Timetable Officer'
+        DEPARTMENT = 'DEPARTMENT', 'Department'
         STUDENT = 'STUDENT', 'Student'
 
     role = models.CharField(
@@ -40,6 +41,12 @@ class User(AbstractUser):
 
     def __str__(self):
         return f"{self.username} ({self.role})"
+
+
+class SubmissionStatus(models.TextChoices):
+    PENDING = 'PENDING', 'Pending'
+    APPROVED = 'APPROVED', 'Approved'
+    REJECTED = 'REJECTED', 'Rejected'
 
 
 class AcademicSession(models.Model):
@@ -123,6 +130,12 @@ class Course(models.Model):
         blank=True
     )
     cohorts = models.ManyToManyField(LevelCohort, related_name='courses', blank=True)
+    status = models.CharField(
+        max_length=10,
+        choices=SubmissionStatus.choices,
+        default=SubmissionStatus.PENDING
+    )
+    officer_note = models.TextField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.code} - {self.title} ({self.unit} C.U)"
@@ -143,6 +156,12 @@ class Venue(models.Model):
         null=True,
         blank=True
     )
+    status = models.CharField(
+        max_length=10,
+        choices=SubmissionStatus.choices,
+        default=SubmissionStatus.PENDING
+    )
+    officer_note = models.TextField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.name} (Cap: {self.capacity})"

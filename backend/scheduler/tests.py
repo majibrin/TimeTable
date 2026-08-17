@@ -30,16 +30,29 @@ class BaseAPITestCase(TestCase):
         self.department = Department.objects.create(
             name="Computer Science", code="CSC", faculty=self.faculty
         )
+        self.other_department = Department.objects.create(
+            name="Biology", code="BIO", faculty=self.faculty
+        )
         self.cohort_100 = LevelCohort.objects.create(
             department=self.department, level="100L", student_count=80
         )
-        self.venue = Venue.objects.create(name="LT1", capacity=150, faculty=self.faculty)
+        self.venue = Venue.objects.create(
+            name="LT1", capacity=150, faculty=self.faculty, status="APPROVED"
+        )
 
         self.super_admin = User.objects.create_user(
             username="admin1", password="StrongPass123", role=User.RoleChoices.SUPER_ADMIN
         )
         self.officer = User.objects.create_user(
             username="officer1", password="StrongPass123", role=User.RoleChoices.TIMETABLE_OFFICER
+        )
+        self.department_user = User.objects.create_user(
+            username="dept1", password="StrongPass123",
+            role=User.RoleChoices.DEPARTMENT, department=self.department
+        )
+        self.other_department_user = User.objects.create_user(
+            username="dept2", password="StrongPass123",
+            role=User.RoleChoices.DEPARTMENT, department=self.other_department
         )
         self.student = User.objects.create_user(
             username="stud1", password="StrongPass123",
@@ -109,6 +122,17 @@ class UserManagementTests(BaseAPITestCase):
         self.assertEqual(response.status_code, 201)
         self.assertTrue(User.objects.filter(username="newstud").exists())
 
+    def test_super_admin_can_create_department_account(self):
+        client = self.auth_client(self.super_admin)
+        response = client.post("/users/", {
+            "username": "newdept", "email": "newdept@example.com",
+            "first_name": "New", "last_name": "Dept",
+            "role": "DEPARTMENT", "password": "SomePass123",
+            "department": self.department.id
+        }, format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(User.objects.get(username="newdept").role, "DEPARTMENT")
+
     def test_duplicate_username_is_rejected(self):
         client = self.auth_client(self.super_admin)
         response = client.post("/users/", {
@@ -162,8 +186,29 @@ class CourseVenueManagementTests(BaseAPITestCase):
         self.assertEqual(response.status_code, 201)
         self.assertTrue(Course.objects.filter(code="CSC201").exists())
 
+    def test_officer_created_course_is_auto_approved(self):
+        client = self.auth_client(self.officer)
+        client.post("/courses/", {
+            "title": "Data Structures", "code": "CSC202", "unit": 3,
+            "department": self.department.id,
+            "cohorts": [self.cohort_100.id],
+        }, format="json")
+        course = Course.objects.get(code="CSC202")
+        self.assertEqual(course.status, "APPROVED")
+
+    def test_department_created_course_is_pending_and_owned(self):
+        client = self.auth_client(self.department_user)
+        response = client.post("/courses/", {
+            "title": "Algorithms", "code": "CSC203", "unit": 3,
+            "cohorts": [self.cohort_100.id],
+        }, format="json")
+        self.assertEqual(response.status_code, 201)
+        course = Course.objects.get(code="CSC203")
+        self.assertEqual(course.status, "PENDING")
+        self.assertEqual(course.department_id, self.department.id)
+
     def test_officer_can_update_course(self):
-        course = Course.objects.create(title="Old", code="CSC100", unit=2, department=self.department)
+        course = Course.objects.create(title="Old", code="CSC100", unit=2, department=self.department, status="APPROVED")
         course.cohorts.add(self.cohort_100)
         client = self.auth_client(self.officer)
         response = client.patch(f"/courses/{course.id}/", {"title": "Updated Title"}, format="json")
@@ -171,8 +216,28 @@ class CourseVenueManagementTests(BaseAPITestCase):
         course.refresh_from_db()
         self.assertEqual(course.title, "Updated Title")
 
+    def test_department_can_edit_own_course(self):
+        course = Course.objects.create(title="Old", code="CSC104", unit=2, department=self.department, status="PENDING")
+        client = self.auth_client(self.department_user)
+        response = client.patch(f"/courses/{course.id}/", {"title": "Fixed Title"}, format="json")
+        self.assertEqual(response.status_code, 200)
+
+    def test_department_cannot_edit_other_departments_course(self):
+        course = Course.objects.create(title="Other", code="BIO101", unit=2, department=self.other_department, status="PENDING")
+        client = self.auth_client(self.department_user)
+        response = client.patch(f"/courses/{course.id}/", {"title": "Hacked"}, format="json")
+        self.assertEqual(response.status_code, 403)
+
+    def test_department_can_view_other_departments_courses(self):
+        Course.objects.create(title="Other", code="BIO102", unit=2, department=self.other_department, status="APPROVED")
+        client = self.auth_client(self.department_user)
+        response = client.get("/courses/")
+        self.assertEqual(response.status_code, 200)
+        codes = [c["code"] for c in response.data]
+        self.assertIn("BIO102", codes)
+
     def test_officer_can_delete_course(self):
-        course = Course.objects.create(title="ToDelete", code="CSC999", unit=1, department=self.department)
+        course = Course.objects.create(title="ToDelete", code="CSC999", unit=1, department=self.department, status="APPROVED")
         client = self.auth_client(self.officer)
         response = client.delete(f"/courses/{course.id}/")
         self.assertEqual(response.status_code, 204)
@@ -183,6 +248,14 @@ class CourseVenueManagementTests(BaseAPITestCase):
         response = client.post("/venues/", {"name": "LT2", "capacity": 200}, format="json")
         self.assertEqual(response.status_code, 201)
         self.assertTrue(Venue.objects.filter(name="LT2").exists())
+
+    def test_department_created_venue_is_pending(self):
+        client = self.auth_client(self.department_user)
+        response = client.post("/venues/", {"name": "LT-DEPT", "capacity": 60}, format="json")
+        self.assertEqual(response.status_code, 201)
+        venue = Venue.objects.get(name="LT-DEPT")
+        self.assertEqual(venue.status, "PENDING")
+        self.assertEqual(venue.department_id, self.department.id)
 
     def test_student_cannot_create_course(self):
         client = self.auth_client(self.student)
@@ -209,7 +282,66 @@ class CourseVenueManagementTests(BaseAPITestCase):
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# 4.7.4 Timetable Generation Testing
+# 4.7.4 Course / Venue Approval Workflow Testing
+# ─────────────────────────────────────────────────────────────────────────
+
+class ApprovalWorkflowTests(BaseAPITestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.pending_course = Course.objects.create(
+            title="Pending Course", code="CSC301", unit=2,
+            department=self.department, status="PENDING"
+        )
+        self.pending_venue = Venue.objects.create(
+            name="Pending Venue", capacity=50, department=self.department, status="PENDING"
+        )
+
+    def test_officer_can_approve_course(self):
+        client = self.auth_client(self.officer)
+        response = client.post(f"/courses/{self.pending_course.id}/review/", {
+            "decision": "APPROVED"
+        }, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.pending_course.refresh_from_db()
+        self.assertEqual(self.pending_course.status, "APPROVED")
+
+    def test_officer_can_reject_course_with_note(self):
+        client = self.auth_client(self.officer)
+        response = client.post(f"/courses/{self.pending_course.id}/review/", {
+            "decision": "REJECTED", "note": "Duplicate course code"
+        }, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.pending_course.refresh_from_db()
+        self.assertEqual(self.pending_course.status, "REJECTED")
+        self.assertEqual(self.pending_course.officer_note, "Duplicate course code")
+
+    def test_officer_can_approve_venue(self):
+        client = self.auth_client(self.officer)
+        response = client.post(f"/venues/{self.pending_venue.id}/review/", {
+            "decision": "APPROVED"
+        }, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.pending_venue.refresh_from_db()
+        self.assertEqual(self.pending_venue.status, "APPROVED")
+
+    def test_department_cannot_review_course(self):
+        client = self.auth_client(self.department_user)
+        response = client.post(f"/courses/{self.pending_course.id}/review/", {
+            "decision": "APPROVED"
+        }, format="json")
+        self.assertEqual(response.status_code, 403)
+
+    def test_department_can_filter_own_pending_submissions(self):
+        client = self.auth_client(self.department_user)
+        response = client.get(f"/courses/?department={self.department.id}&status=PENDING")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["code"], "CSC301")
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 4.7.5 Timetable Generation Testing
 # ─────────────────────────────────────────────────────────────────────────
 
 class TimetableGenerationTests(BaseAPITestCase):
@@ -222,7 +354,7 @@ class TimetableGenerationTests(BaseAPITestCase):
         )
         self.course = Course.objects.create(
             title="Intro to Programming", code="CSC101", unit=2,
-            department=self.department
+            department=self.department, status="APPROVED"
         )
         self.course.cohorts.add(self.cohort_100)
 
@@ -236,6 +368,18 @@ class TimetableGenerationTests(BaseAPITestCase):
         client = self.auth_client(self.officer)
         response = client.post("/generate/", {}, format="json")
         self.assertEqual(response.status_code, 400)
+
+    def test_generation_ignores_pending_courses(self):
+        Course.objects.create(
+            title="Pending", code="CSC199", unit=2,
+            department=self.department, status="PENDING"
+        ).cohorts.add(self.cohort_100)
+        client = self.auth_client(self.officer)
+        client.post("/generate/", {
+            "initial_temperature": 100.0, "cooling_rate": 0.8, "min_temperature": 1.0
+        }, format="json")
+        codes_used = set(SessionSlot.objects.values_list("course__code", flat=True))
+        self.assertNotIn("CSC199", codes_used)
 
     def test_generation_produces_session_slots(self):
         client = self.auth_client(self.officer)
@@ -258,7 +402,7 @@ class TimetableGenerationTests(BaseAPITestCase):
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# 4.7.5 Constraint Validation Testing (direct engine unit tests)
+# 4.7.6 Constraint Validation Testing (direct engine unit tests)
 # ─────────────────────────────────────────────────────────────────────────
 
 class ConstraintValidationTests(TestCase):
@@ -327,7 +471,7 @@ class ConstraintValidationTests(TestCase):
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# 4.7.6 Timetable Publishing Testing
+# 4.7.7 Timetable Publishing Testing
 # ─────────────────────────────────────────────────────────────────────────
 
 class TimetablePublishingTests(BaseAPITestCase):
@@ -336,7 +480,7 @@ class TimetablePublishingTests(BaseAPITestCase):
         super().setUp()
         self.course = Course.objects.create(
             title="Intro to Programming", code="CSC101", unit=2,
-            department=self.department
+            department=self.department, status="APPROVED"
         )
         self.slot = SessionSlot.objects.create(
             course=self.course, venue=self.venue,

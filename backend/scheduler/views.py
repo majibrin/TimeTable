@@ -246,17 +246,33 @@ class LevelCohortDetailView(generics.RetrieveUpdateDestroyAPIView):
 # ─── Venue ───────────────────────────────────────────────────────────────────
 
 class VenueListCreateView(generics.ListCreateAPIView):
-    queryset = Venue.objects.select_related('faculty', 'department').all()
     serializer_class = VenueSerializer
     permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        qs = Venue.objects.select_related('faculty', 'department').all()
+        department = self.request.query_params.get('department')
+        status_param = self.request.query_params.get('status')
+        if department:
+            qs = qs.filter(department_id=department)
+        if status_param:
+            qs = qs.filter(status=status_param)
+        return qs
 
     def dispatch(self, request, *args, **kwargs):
         user = get_authenticated_user(request)
         if not user:
             return JsonResponse({"error": "Unauthorized"}, status=401)
-        if request.method != 'GET' and user.role not in ('SUPER_ADMIN', 'TIMETABLE_OFFICER'):
+        if request.method != 'GET' and user.role not in ('SUPER_ADMIN', 'TIMETABLE_OFFICER', 'DEPARTMENT'):
             return JsonResponse({"error": "Forbidden"}, status=403)
         return super().dispatch(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        user = get_authenticated_user(self.request)
+        if user.role == 'DEPARTMENT':
+            serializer.save(department=user.department, status='PENDING')
+        else:
+            serializer.save(status='APPROVED')
 
 
 class VenueDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -266,9 +282,18 @@ class VenueDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def dispatch(self, request, *args, **kwargs):
         user = get_authenticated_user(request)
-        if not user or user.role not in ('SUPER_ADMIN', 'TIMETABLE_OFFICER'):
-            return JsonResponse({"error": "Forbidden"}, status=403)
-        return super().dispatch(request, *args, **kwargs)
+        if not user:
+            return JsonResponse({"error": "Unauthorized"}, status=401)
+        if request.method == 'GET':
+            return super().dispatch(request, *args, **kwargs)
+        if user.role in ('SUPER_ADMIN', 'TIMETABLE_OFFICER'):
+            return super().dispatch(request, *args, **kwargs)
+        if user.role == 'DEPARTMENT':
+            venue = Venue.objects.filter(pk=kwargs.get('pk')).first()
+            if not venue or venue.department_id != user.department_id:
+                return JsonResponse({"error": "Forbidden"}, status=403)
+            return super().dispatch(request, *args, **kwargs)
+        return JsonResponse({"error": "Forbidden"}, status=403)
 
 
 # ─── Course ──────────────────────────────────────────────────────────────────
@@ -282,21 +307,31 @@ class CourseListCreateView(generics.ListCreateAPIView):
         department = self.request.query_params.get('department')
         cohort = self.request.query_params.get('cohort')
         level = self.request.query_params.get('level')
+        status_param = self.request.query_params.get('status')
         if department:
             qs = qs.filter(department_id=department)
         if cohort:
             qs = qs.filter(cohorts__id=cohort)
         if level:
             qs = qs.filter(cohorts__level=level)
+        if status_param:
+            qs = qs.filter(status=status_param)
         return qs.distinct()
 
     def dispatch(self, request, *args, **kwargs):
         user = get_authenticated_user(request)
         if not user:
             return JsonResponse({"error": "Unauthorized"}, status=401)
-        if request.method != 'GET' and user.role not in ('SUPER_ADMIN', 'TIMETABLE_OFFICER'):
+        if request.method != 'GET' and user.role not in ('SUPER_ADMIN', 'TIMETABLE_OFFICER', 'DEPARTMENT'):
             return JsonResponse({"error": "Forbidden"}, status=403)
         return super().dispatch(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        user = get_authenticated_user(self.request)
+        if user.role == 'DEPARTMENT':
+            serializer.save(department=user.department, status='PENDING')
+        else:
+            serializer.save(status='APPROVED')
 
 
 class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -306,9 +341,68 @@ class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def dispatch(self, request, *args, **kwargs):
         user = get_authenticated_user(request)
-        if not user or user.role not in ('SUPER_ADMIN', 'TIMETABLE_OFFICER'):
-            return JsonResponse({"error": "Forbidden"}, status=403)
-        return super().dispatch(request, *args, **kwargs)
+        if not user:
+            return JsonResponse({"error": "Unauthorized"}, status=401)
+        if request.method == 'GET':
+            return super().dispatch(request, *args, **kwargs)
+        if user.role in ('SUPER_ADMIN', 'TIMETABLE_OFFICER'):
+            return super().dispatch(request, *args, **kwargs)
+        if user.role == 'DEPARTMENT':
+            course = Course.objects.filter(pk=kwargs.get('pk')).first()
+            if not course or course.department_id != user.department_id:
+                return JsonResponse({"error": "Forbidden"}, status=403)
+            return super().dispatch(request, *args, **kwargs)
+        return JsonResponse({"error": "Forbidden"}, status=403)
+
+
+# ─── Course / Venue Review (Officer approval workflow) ───────────────────────
+
+@csrf_exempt
+def review_course(request, pk):
+    if request.method != 'POST':
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    user, err = require_roles(request, ['SUPER_ADMIN', 'TIMETABLE_OFFICER'])
+    if err:
+        return err
+    try:
+        course = Course.objects.get(pk=pk)
+    except Course.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    decision = data.get('decision')
+    if decision not in ('APPROVED', 'REJECTED'):
+        return JsonResponse({"error": "decision must be APPROVED or REJECTED"}, status=400)
+    course.status = decision
+    course.officer_note = data.get('note', '')
+    course.save()
+    return JsonResponse({"status": decision, "id": pk})
+
+
+@csrf_exempt
+def review_venue(request, pk):
+    if request.method != 'POST':
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    user, err = require_roles(request, ['SUPER_ADMIN', 'TIMETABLE_OFFICER'])
+    if err:
+        return err
+    try:
+        venue = Venue.objects.get(pk=pk)
+    except Venue.DoesNotExist:
+        return JsonResponse({"error": "Not found"}, status=404)
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    decision = data.get('decision')
+    if decision not in ('APPROVED', 'REJECTED'):
+        return JsonResponse({"error": "decision must be APPROVED or REJECTED"}, status=400)
+    venue.status = decision
+    venue.officer_note = data.get('note', '')
+    venue.save()
+    return JsonResponse({"status": decision, "id": pk})
 
 
 # ─── Session Slots ───────────────────────────────────────────────────────────
@@ -434,6 +528,7 @@ def import_courses_csv(request):
                     'title': row['title'].strip(),
                     'unit': int(row['unit']),
                     'department': dept,
+                    'status': 'APPROVED',
                 }
             )
 
@@ -473,7 +568,7 @@ def import_venues_csv(request):
         try:
             Venue.objects.update_or_create(
                 name=row['name'].strip(),
-                defaults={'capacity': int(row['capacity'])}
+                defaults={'capacity': int(row['capacity']), 'status': 'APPROVED'}
             )
             created += 1
         except Exception as e:
@@ -518,14 +613,14 @@ def generate_timetable_trigger(request):
 
     active_semester = Semester.objects.filter(is_active=True).first()
 
-    courses = Course.objects.prefetch_related('cohorts').all()
-    venues = Venue.objects.all()
+    courses = Course.objects.filter(status='APPROVED').prefetch_related('cohorts').all()
+    venues = Venue.objects.filter(status='APPROVED').all()
     level_cohorts = LevelCohort.objects.all()
 
     if not venues.exists():
-        return JsonResponse({"error": "No venues configured."}, status=400)
+        return JsonResponse({"error": "No approved venues configured."}, status=400)
     if not courses.exists():
-        return JsonResponse({"error": "No courses configured."}, status=400)
+        return JsonResponse({"error": "No approved courses configured."}, status=400)
 
     sessions_to_optimize = []
 
@@ -553,7 +648,7 @@ def generate_timetable_trigger(request):
             })
 
     if not sessions_to_optimize:
-        return JsonResponse({"error": "No courses with cohorts assigned."}, status=400)
+        return JsonResponse({"error": "No approved courses with cohorts assigned."}, status=400)
 
     try:
         engine = TimetableEngine(
