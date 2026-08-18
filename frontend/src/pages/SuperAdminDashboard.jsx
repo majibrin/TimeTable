@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import API from '../api/client';
 
-const ROLES = ['SUPER_ADMIN', 'TIMETABLE_OFFICER', 'STUDENT'];
+const ROLES = ['SUPER_ADMIN', 'TIMETABLE_OFFICER', 'DEPARTMENT', 'STUDENT'];
 
 export default function SuperAdminDashboard() {
   const [users, setUsers] = useState([]);
