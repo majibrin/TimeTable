@@ -1,6 +1,17 @@
 import datetime
 from rest_framework import serializers
-from .models import Course, SessionSlot, Venue, Department, LevelCohort
+from .models import Course, SessionSlot, Venue, Department, LevelCohort, StudentGroup
+
+
+class StudentGroupSerializer(serializers.ModelSerializer):
+    departments_detail = serializers.SerializerMethodField()
+
+    class Meta:
+        model = StudentGroup
+        fields = ['id', 'level', 'scheme', 'name', 'departments', 'departments_detail']
+
+    def get_departments_detail(self, obj):
+        return [{'id': d.id, 'name': d.name} for d in obj.departments.all()]
 
 
 class CourseSerializer(serializers.ModelSerializer):
@@ -8,7 +19,13 @@ class CourseSerializer(serializers.ModelSerializer):
         many=True,
         queryset=LevelCohort.objects.all()
     )
+    student_groups = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=StudentGroup.objects.all(),
+        required=False
+    )
     cohorts_detail = serializers.SerializerMethodField()
+    student_groups_detail = serializers.SerializerMethodField()
     department_name = serializers.CharField(source='department.name', read_only=True)
 
     class Meta:
@@ -17,6 +34,8 @@ class CourseSerializer(serializers.ModelSerializer):
             'id', 'title', 'code', 'unit',
             'department', 'department_name',
             'cohorts', 'cohorts_detail',
+            'student_groups', 'student_groups_detail',
+            'has_practical',
             'status', 'officer_note',
         ]
         read_only_fields = ['status', 'officer_note']
@@ -25,6 +44,12 @@ class CourseSerializer(serializers.ModelSerializer):
         return [
             {'id': c.id, 'label': f"{c.department.name} — {c.level}"}
             for c in obj.cohorts.select_related('department').all()
+        ]
+
+    def get_student_groups_detail(self, obj):
+        return [
+            {'id': g.id, 'label': f"{g.level} {g.get_scheme_display()} — {g.name}"}
+            for g in obj.student_groups.all()
         ]
 
 
@@ -71,6 +96,7 @@ class SessionSlotSerializer(serializers.ModelSerializer):
     course_detail = serializers.SerializerMethodField()
     venue_name = serializers.SerializerMethodField()
     cohort_detail = serializers.SerializerMethodField()
+    student_group_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = SessionSlot
@@ -78,6 +104,7 @@ class SessionSlotSerializer(serializers.ModelSerializer):
             'id', 'course', 'course_detail',
             'venue', 'venue_name',
             'cohort', 'cohort_detail',
+            'student_group', 'student_group_detail',
             'day', 'start_time', 'duration', 'is_published'
         ]
 
@@ -90,6 +117,11 @@ class SessionSlotSerializer(serializers.ModelSerializer):
     def get_cohort_detail(self, obj):
         if obj.cohort:
             return f"{obj.cohort.department.code} {obj.cohort.level}"
+        return None
+
+    def get_student_group_detail(self, obj):
+        if obj.student_group:
+            return f"{obj.student_group.level} {obj.student_group.get_scheme_display()} — {obj.student_group.name}"
         return None
 
     def validate(self, data):

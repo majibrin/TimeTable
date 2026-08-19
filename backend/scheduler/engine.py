@@ -60,7 +60,8 @@ class TimetableEngine:
         for s in sessions_data:
             state.append({
                 'course_id': s['course_id'],
-                'cohort_ids': s['cohort_ids'],   # list of cohort IDs
+                'group_kind': s.get('group_kind', 'COHORT'),  # 'COHORT' or 'GROUP'
+                'cohort_ids': s['cohort_ids'],   # list of clash-unit IDs (LevelCohort or StudentGroup)
                 'venue_id': random.choice(venue_ids) if venue_ids else None,
                 'day_index': random.randint(0, 5),
                 'time_slot_index': random.choice([0,1,2,3,4,6,7,8,9]),
@@ -98,11 +99,14 @@ class TimetableEngine:
             t_start = session['time_slot_index']
             dur = session['duration']
             v_id = session['venue_id']
+            group_kind = session.get('group_kind', 'COHORT')
             cohort_ids = session['cohort_ids']  # list
             cr_id = session['course_id']
 
-            # Venue capacity — use largest cohort size
-            if v_id and cohort_ids:
+            # Venue capacity — use largest clash-unit size (only meaningful for
+            # COHORT-based sessions today; GROUP-based sessions have no known
+            # size yet, so this check is skipped for them rather than guessed).
+            if v_id and cohort_ids and group_kind == 'COHORT':
                 max_cohort_size = max(cohort_caps.get(c, 0) for c in cohort_ids)
                 if max_cohort_size > venue_caps.get(v_id, 0):
                     hard_penalty += w['venue_capacity']
@@ -135,9 +139,10 @@ class TimetableEngine:
                         hard_penalty += w['venue_clash']
                     venue_grid[v_key] = True
 
-                # Cohort clash — check all cohorts
+                # Cohort/group clash — namespaced by group_kind so a
+                # StudentGroup id and a LevelCohort id never collide.
                 for c_id in cohort_ids:
-                    c_key = (c_id, d, t)
+                    c_key = (group_kind, c_id, d, t)
                     if c_key in cohort_grid:
                         hard_penalty += w['cohort_clash']
                     cohort_grid[c_key] = True

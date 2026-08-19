@@ -14,6 +14,9 @@ urlpatterns = [
     path('cohorts/', views.LevelCohortListCreateView.as_view()),
     path('cohorts/<int:pk>/', views.LevelCohortDetailView.as_view()),
 
+    path('groups/', views.StudentGroupListCreateView.as_view()),
+    path('groups/<int:pk>/', views.StudentGroupDetailView.as_view()),
+
     path('venues/', views.VenueListCreateView.as_view()),
     path('venues/<int:pk>/', views.VenueDetailView.as_view()),
     path('venues/<int:pk>/review/', views.review_venue),

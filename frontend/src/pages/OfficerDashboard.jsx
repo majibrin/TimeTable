@@ -3,7 +3,12 @@ import API from '../api/client';
 import TimetableGrid from '../components/TimetableGrid';
 import { exportTimetablePdf } from '../utils/exportPdf';
 
-const TABS = ['TIMETABLE', 'COURSES', 'VENUES'];
+const TABS = ['TIMETABLE', 'COURSES', 'VENUES', 'PENDING REVIEW'];
+const STATUS_COLORS = {
+  PENDING: 'bg-amber-50 text-amber-600',
+  APPROVED: 'bg-green-50 text-green-600',
+  REJECTED: 'bg-red-50 text-red-600',
+};
 
 export default function OfficerDashboard() {
   const [tab, setTab] = useState('TIMETABLE');
@@ -172,7 +177,32 @@ export default function OfficerDashboard() {
     e.target.value = '';
   };
 
+  const handleReviewCourse = async (id, decision) => {
+    const note = decision === 'REJECTED' ? (window.prompt('Rejection note (optional):') || '') : '';
+    try {
+      await API.post(`courses/${id}/review/`, { decision, note });
+      msg(true, `Course ${decision.toLowerCase()}`);
+      fetchAll();
+    } catch (e) {
+      msg(false, 'Review failed');
+    }
+  };
+
+  const handleReviewVenue = async (id, decision) => {
+    const note = decision === 'REJECTED' ? (window.prompt('Rejection note (optional):') || '') : '';
+    try {
+      await API.post(`venues/${id}/review/`, { decision, note });
+      msg(true, `Venue ${decision.toLowerCase()}`);
+      fetchAll();
+    } catch (e) {
+      msg(false, 'Review failed');
+    }
+  };
+
   const handleLogout = () => { localStorage.removeItem('token'); window.location.href = '/login'; };
+
+  const pendingCourses = courses.filter(c => c.status === 'PENDING');
+  const pendingVenues = venues.filter(v => v.status === 'PENDING');
 
   return (
     <div className="min-h-screen bg-slate-50 font-mono">
@@ -205,7 +235,7 @@ export default function OfficerDashboard() {
         {TABS.map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 text-[11px] font-bold border-b-2 transition-colors ${tab === t ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
-            {t}
+            {t}{t === 'PENDING REVIEW' && (pendingCourses.length + pendingVenues.length) > 0 ? ` (${pendingCourses.length + pendingVenues.length})` : ''}
           </button>
         ))}
       </div>
@@ -299,8 +329,11 @@ export default function OfficerDashboard() {
                         {c.cohorts_detail?.map(cd => cd.label).join(', ') || 'No cohorts'}
                       </div>
                     </div>
-                    <button onClick={() => handleDeleteCourse(c.id)}
-                      className="px-2 py-1 text-[10px] font-bold bg-red-50 text-red-600 border border-red-200 rounded">DEL</button>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${STATUS_COLORS[c.status] || ''}`}>{c.status}</span>
+                      <button onClick={() => handleDeleteCourse(c.id)}
+                        className="px-2 py-1 text-[10px] font-bold bg-red-50 text-red-600 border border-red-200 rounded">DEL</button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -342,11 +375,70 @@ export default function OfficerDashboard() {
                       <div className="text-xs font-bold text-slate-800">{v.name}</div>
                       <div className="text-[10px] text-slate-500">Capacity: {v.capacity}</div>
                     </div>
-                    <button onClick={() => handleDeleteVenue(v.id)}
-                      className="px-2 py-1 text-[10px] font-bold bg-red-50 text-red-600 border border-red-200 rounded">DEL</button>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${STATUS_COLORS[v.status] || ''}`}>{v.status}</span>
+                      <button onClick={() => handleDeleteVenue(v.id)}
+                        className="px-2 py-1 text-[10px] font-bold bg-red-50 text-red-600 border border-red-200 rounded">DEL</button>
+                    </div>
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+
+        {tab === 'PENDING REVIEW' && (
+          <div className="max-w-3xl space-y-4">
+            <div className="bg-white border border-slate-200 rounded-lg shadow-sm">
+              <div className="p-3 border-b border-slate-100 text-xs font-bold text-slate-700">PENDING COURSES ({pendingCourses.length})</div>
+              {pendingCourses.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-400">Nothing pending</div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {pendingCourses.map(c => (
+                    <div key={c.id} className="p-3">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <div className="text-xs font-bold text-slate-800">{c.code}</div>
+                          <div className="text-[10px] text-slate-500">{c.title} · {c.unit}u · {c.department_name}</div>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => handleReviewCourse(c.id, 'APPROVED')}
+                          className="px-3 py-1 text-[10px] font-bold bg-green-50 text-green-600 border border-green-200 rounded">APPROVE</button>
+                        <button onClick={() => handleReviewCourse(c.id, 'REJECTED')}
+                          className="px-3 py-1 text-[10px] font-bold bg-red-50 text-red-600 border border-red-200 rounded">REJECT</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-lg shadow-sm">
+              <div className="p-3 border-b border-slate-100 text-xs font-bold text-slate-700">PENDING VENUES ({pendingVenues.length})</div>
+              {pendingVenues.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-400">Nothing pending</div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {pendingVenues.map(v => (
+                    <div key={v.id} className="p-3">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <div className="text-xs font-bold text-slate-800">{v.name}</div>
+                          <div className="text-[10px] text-slate-500">Capacity: {v.capacity} · {v.department_name}</div>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => handleReviewVenue(v.id, 'APPROVED')}
+                          className="px-3 py-1 text-[10px] font-bold bg-green-50 text-green-600 border border-green-200 rounded">APPROVE</button>
+                        <button onClick={() => handleReviewVenue(v.id, 'REJECTED')}
+                          className="px-3 py-1 text-[10px] font-bold bg-red-50 text-red-600 border border-red-200 rounded">REJECT</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}

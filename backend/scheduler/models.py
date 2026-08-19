@@ -2,6 +2,15 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 
 
+LEVEL_CHOICES = [
+    ("100L", "100 Level"),
+    ("200L", "200 Level"),
+    ("300L", "300 Level"),
+    ("400L", "400 Level"),
+    ("500L", "500 Level"),
+]
+
+
 class Faculty(models.Model):
     name = models.CharField(max_length=100, unique=True)
     code = models.CharField(max_length=10, unique=True)
@@ -98,17 +107,7 @@ class TimeSlot(models.Model):
 
 class LevelCohort(models.Model):
     department = models.ForeignKey(Department, on_delete=models.CASCADE)
-    level = models.CharField(
-        max_length=4,
-        choices=[
-            ("100L", "100 Level"),
-            ("200L", "200 Level"),
-            ("300L", "300 Level"),
-            ("400L", "400 Level"),
-            ("500L", "500 Level"),
-        ],
-        default="100L"
-    )
+    level = models.CharField(max_length=4, choices=LEVEL_CHOICES, default="100L")
     student_count = models.IntegerField(default=0)
 
     class Meta:
@@ -116,6 +115,29 @@ class LevelCohort(models.Model):
 
     def __str__(self):
         return f"{self.department.code} ({self.level})"
+
+
+class StudentGroup(models.Model):
+    """A named scheduling group for a given level, defined by the
+    Timetable Officer by assigning departments to it. 'General' groups
+    are broad, reusable defaults (e.g. Group A-J). 'Course-Specific'
+    groups are meaningful only in the context of the course(s) they
+    were defined for (e.g. CHM 210's own Group A differs from CHM 212's
+    Group A, even at the same level). 'Practical' groups are used for
+    lab/practical sessions."""
+
+    class SchemeChoices(models.TextChoices):
+        GENERAL = 'GENERAL', 'General Group'
+        COURSE_SPECIFIC = 'COURSE_SPECIFIC', 'Course-Specific Group'
+        PRACTICAL = 'PRACTICAL', 'Practical Group'
+
+    level = models.CharField(max_length=4, choices=LEVEL_CHOICES)
+    scheme = models.CharField(max_length=20, choices=SchemeChoices.choices)
+    name = models.CharField(max_length=20)  # e.g. "A", "B", "1", "2"
+    departments = models.ManyToManyField(Department, related_name='student_groups', blank=True)
+
+    def __str__(self):
+        return f"{self.level} {self.get_scheme_display()} — {self.name}"
 
 
 class Course(models.Model):
@@ -130,6 +152,8 @@ class Course(models.Model):
         blank=True
     )
     cohorts = models.ManyToManyField(LevelCohort, related_name='courses', blank=True)
+    student_groups = models.ManyToManyField(StudentGroup, related_name='courses', blank=True)
+    has_practical = models.BooleanField(default=False)
     status = models.CharField(
         max_length=10,
         choices=SubmissionStatus.choices,
@@ -188,6 +212,13 @@ class SessionSlot(models.Model):
     cohort = models.ForeignKey(
         LevelCohort,
         on_delete=models.RESTRICT,
+        null=True,
+        blank=True,
+        related_name='session_slots'
+    )
+    student_group = models.ForeignKey(
+        StudentGroup,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name='session_slots'

@@ -13,14 +13,14 @@ from rest_framework import generics
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from .models import (
-    Course, SessionSlot, Venue, LevelCohort,
+    Course, SessionSlot, Venue, LevelCohort, StudentGroup,
     User, Faculty, Department,
     AcademicSession, Semester, TimeSlot, ConstraintSetting
 )
 from .serializers import (
     CourseSerializer, SessionSlotSerializer,
     VenueSerializer, LevelCohortSerializer,
-    DepartmentWithCohortsSerializer
+    DepartmentWithCohortsSerializer, StudentGroupSerializer
 )
 from .auth_serializers import LoginSerializer
 from .engine import TimetableEngine
@@ -243,6 +243,43 @@ class LevelCohortDetailView(generics.RetrieveUpdateDestroyAPIView):
         return super().dispatch(request, *args, **kwargs)
 
 
+# ─── StudentGroup (Officer-maintained grouping schemes) ──────────────────────
+
+class StudentGroupListCreateView(generics.ListCreateAPIView):
+    serializer_class = StudentGroupSerializer
+    permission_classes = [AllowAny]
+
+    def get_queryset(self):
+        qs = StudentGroup.objects.prefetch_related('departments').all()
+        level = self.request.query_params.get('level')
+        scheme = self.request.query_params.get('scheme')
+        if level:
+            qs = qs.filter(level=level)
+        if scheme:
+            qs = qs.filter(scheme=scheme)
+        return qs
+
+    def dispatch(self, request, *args, **kwargs):
+        user = get_authenticated_user(request)
+        if not user:
+            return JsonResponse({"error": "Unauthorized"}, status=401)
+        if request.method != 'GET' and user.role not in ('SUPER_ADMIN', 'TIMETABLE_OFFICER'):
+            return JsonResponse({"error": "Forbidden"}, status=403)
+        return super().dispatch(request, *args, **kwargs)
+
+
+class StudentGroupDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = StudentGroup.objects.prefetch_related('departments').all()
+    serializer_class = StudentGroupSerializer
+    permission_classes = [AllowAny]
+
+    def dispatch(self, request, *args, **kwargs):
+        user = get_authenticated_user(request)
+        if not user or user.role not in ('SUPER_ADMIN', 'TIMETABLE_OFFICER'):
+            return JsonResponse({"error": "Forbidden"}, status=403)
+        return super().dispatch(request, *args, **kwargs)
+
+
 # ─── Venue ───────────────────────────────────────────────────────────────────
 
 class VenueListCreateView(generics.ListCreateAPIView):
@@ -303,7 +340,7 @@ class CourseListCreateView(generics.ListCreateAPIView):
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        qs = Course.objects.select_related('department').prefetch_related('cohorts').all()
+        qs = Course.objects.select_related('department').prefetch_related('cohorts', 'student_groups').all()
         department = self.request.query_params.get('department')
         cohort = self.request.query_params.get('cohort')
         level = self.request.query_params.get('level')
@@ -335,7 +372,7 @@ class CourseListCreateView(generics.ListCreateAPIView):
 
 
 class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Course.objects.select_related('department').prefetch_related('cohorts').all()
+    queryset = Course.objects.select_related('department').prefetch_related('cohorts', 'student_groups').all()
     serializer_class = CourseSerializer
     permission_classes = [AllowAny]
 
@@ -413,7 +450,7 @@ class SessionSlotListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         qs = SessionSlot.objects.select_related(
-            'course__department', 'venue', 'cohort'
+            'course__department', 'venue', 'cohort', 'student_group'
         ).all()
         level = self.request.query_params.get('level')
         day = self.request.query_params.get('day')
@@ -613,7 +650,7 @@ def generate_timetable_trigger(request):
 
     active_semester = Semester.objects.filter(is_active=True).first()
 
-    courses = Course.objects.filter(status='APPROVED').prefetch_related('cohorts').all()
+    courses = Course.objects.filter(status='APPROVED').prefetch_related('cohorts', 'student_groups').all()
     venues = Venue.objects.filter(status='APPROVED').all()
     level_cohorts = LevelCohort.objects.all()
 
@@ -625,30 +662,49 @@ def generate_timetable_trigger(request):
     sessions_to_optimize = []
 
     for course in courses:
+        groups = list(course.student_groups.all())
+
+        if groups:
+            for group in groups:
+                if course.unit == 3:
+                    sessions_to_optimize.append({
+                        'course_id': course.id, 'group_kind': 'GROUP',
+                        'cohort_ids': [group.id], 'duration': 2
+                    })
+                    sessions_to_optimize.append({
+                        'course_id': course.id, 'group_kind': 'GROUP',
+                        'cohort_ids': [group.id], 'duration': 1
+                    })
+                else:
+                    sessions_to_optimize.append({
+                        'course_id': course.id, 'group_kind': 'GROUP',
+                        'cohort_ids': [group.id],
+                        'duration': course.unit if course.unit > 0 else 1
+                    })
+            continue
+
         cohort_ids = list(course.cohorts.values_list('id', flat=True))
         if not cohort_ids:
             continue
 
         if course.unit == 3:
             sessions_to_optimize.append({
-                'course_id': course.id,
-                'cohort_ids': cohort_ids,
-                'duration': 2
+                'course_id': course.id, 'group_kind': 'COHORT',
+                'cohort_ids': cohort_ids, 'duration': 2
             })
             sessions_to_optimize.append({
-                'course_id': course.id,
-                'cohort_ids': cohort_ids,
-                'duration': 1
+                'course_id': course.id, 'group_kind': 'COHORT',
+                'cohort_ids': cohort_ids, 'duration': 1
             })
         else:
             sessions_to_optimize.append({
-                'course_id': course.id,
+                'course_id': course.id, 'group_kind': 'COHORT',
                 'cohort_ids': cohort_ids,
                 'duration': course.unit if course.unit > 0 else 1
             })
 
     if not sessions_to_optimize:
-        return JsonResponse({"error": "No approved courses with cohorts assigned."}, status=400)
+        return JsonResponse({"error": "No approved courses with cohorts or groups assigned."}, status=400)
 
     try:
         engine = TimetableEngine(
@@ -669,17 +725,30 @@ def generate_timetable_trigger(request):
             for slot in optimized_state:
                 target_day = days_lookup[slot['day_index']]
                 target_hour = time_hours_lookup[slot['time_slot_index']]
-                for cohort_id in slot['cohort_ids']:
+
+                if slot['group_kind'] == 'GROUP':
                     SessionSlot.objects.create(
                         course_id=slot['course_id'],
                         venue_id=slot['venue_id'],
-                        cohort_id=cohort_id,
+                        student_group_id=slot['cohort_ids'][0],
                         semester=active_semester,
                         day=target_day,
                         start_time=datetime.time(target_hour, 0),
                         duration=slot['duration'],
                         is_published=False
                     )
+                else:
+                    for cohort_id in slot['cohort_ids']:
+                        SessionSlot.objects.create(
+                            course_id=slot['course_id'],
+                            venue_id=slot['venue_id'],
+                            cohort_id=cohort_id,
+                            semester=active_semester,
+                            day=target_day,
+                            start_time=datetime.time(target_hour, 0),
+                            duration=slot['duration'],
+                            is_published=False
+                        )
 
         return JsonResponse({
             "status": "Optimization completed successfully.",

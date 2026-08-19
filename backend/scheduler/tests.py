@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from scheduler.models import (
-    Faculty, Department, LevelCohort, Course, Venue,
+    Faculty, Department, LevelCohort, Course, Venue, StudentGroup,
     AcademicSession, Semester, SessionSlot,
     ConstraintSetting,
 )
@@ -512,3 +512,75 @@ class TimetablePublishingTests(BaseAPITestCase):
         client = self.auth_client(self.student)
         response = client.post("/publish/", {}, format="json")
         self.assertEqual(response.status_code, 403)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 4.7.8 Student Grouping Testing
+# ─────────────────────────────────────────────────────────────────────────
+
+class StudentGroupTests(BaseAPITestCase):
+
+    def test_officer_can_create_student_group(self):
+        client = self.auth_client(self.officer)
+        response = client.post("/groups/", {
+            "level": "100L", "scheme": "GENERAL", "name": "A",
+            "departments": [self.department.id]
+        }, format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(StudentGroup.objects.filter(level="100L", name="A").exists())
+
+    def test_department_cannot_create_student_group(self):
+        client = self.auth_client(self.department_user)
+        response = client.post("/groups/", {
+            "level": "100L", "scheme": "GENERAL", "name": "B",
+            "departments": [self.department.id]
+        }, format="json")
+        self.assertEqual(response.status_code, 403)
+
+    def test_course_with_groups_generates_one_slot_per_group(self):
+        session = AcademicSession.objects.create(name="2025/2026", is_active=True)
+        Semester.objects.create(session=session, name="FIRST", is_active=True)
+
+        group_a = StudentGroup.objects.create(level="200L", scheme="COURSE_SPECIFIC", name="A")
+        group_a.departments.add(self.department)
+        group_b = StudentGroup.objects.create(level="200L", scheme="COURSE_SPECIFIC", name="B")
+        group_b.departments.add(self.other_department)
+
+        venue2 = Venue.objects.create(name="LT-GROUP2", capacity=100, faculty=self.faculty, status="APPROVED")
+
+        course = Course.objects.create(
+            title="Chemistry I", code="CHM210", unit=2,
+            department=self.department, status="APPROVED"
+        )
+        course.student_groups.set([group_a, group_b])
+
+        client = self.auth_client(self.officer)
+        response = client.post("/generate/", {
+            "initial_temperature": 100.0, "cooling_rate": 0.8, "min_temperature": 1.0
+        }, format="json")
+        self.assertEqual(response.status_code, 200)
+
+        slots = SessionSlot.objects.filter(course=course)
+        self.assertEqual(slots.count(), 2)
+        group_ids_used = set(slots.values_list("student_group_id", flat=True))
+        self.assertEqual(group_ids_used, {group_a.id, group_b.id})
+
+    def test_course_without_groups_still_uses_cohort_fallback(self):
+        session = AcademicSession.objects.create(name="2025/2026", is_active=True)
+        Semester.objects.create(session=session, name="FIRST", is_active=True)
+
+        course = Course.objects.create(
+            title="Intro", code="CSC101F", unit=2,
+            department=self.department, status="APPROVED"
+        )
+        course.cohorts.add(self.cohort_100)
+
+        client = self.auth_client(self.officer)
+        response = client.post("/generate/", {
+            "initial_temperature": 100.0, "cooling_rate": 0.8, "min_temperature": 1.0
+        }, format="json")
+        self.assertEqual(response.status_code, 200)
+
+        slot = SessionSlot.objects.get(course=course)
+        self.assertEqual(slot.cohort_id, self.cohort_100.id)
+        self.assertIsNone(slot.student_group_id)
