@@ -3,12 +3,18 @@ import API from '../api/client';
 import TimetableGrid from '../components/TimetableGrid';
 import { exportTimetablePdf } from '../utils/exportPdf';
 
-const TABS = ['TIMETABLE', 'COURSES', 'VENUES', 'PENDING REVIEW'];
+const TABS = ['TIMETABLE', 'COURSES', 'VENUES', 'GROUPS', 'PENDING REVIEW'];
 const STATUS_COLORS = {
   PENDING: 'bg-amber-50 text-amber-600',
   APPROVED: 'bg-green-50 text-green-600',
   REJECTED: 'bg-red-50 text-red-600',
 };
+const LEVELS = ['100L', '200L', '300L', '400L', '500L'];
+const SCHEMES = [
+  { value: 'GENERAL', label: 'General Group' },
+  { value: 'COURSE_SPECIFIC', label: 'Course-Specific Group' },
+  { value: 'PRACTICAL', label: 'Practical Group' },
+];
 
 export default function OfficerDashboard() {
   const [tab, setTab] = useState('TIMETABLE');
@@ -17,27 +23,35 @@ export default function OfficerDashboard() {
   const [venues, setVenues] = useState([]);
   const [cohorts, setCohorts] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [generating, setGenerating] = useState(false);
+  const [openAssign, setOpenAssign] = useState(null);
+  const [assignSelections, setAssignSelections] = useState({});
 
   const [courseForm, setCourseForm] = useState({
     code: '', title: '', unit: 2,
     department: '',
     selectedCohorts: [],
+    hasPractical: false,
   });
   const [venueForm, setVenueForm] = useState({ name: '', capacity: '' });
+  const [groupForm, setGroupForm] = useState({
+    level: '100L', scheme: 'GENERAL', name: '', selectedDepartments: [],
+  });
 
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [slotsRes, coursesRes, venuesRes, cohortsRes, deptsRes] = await Promise.all([
+      const [slotsRes, coursesRes, venuesRes, cohortsRes, deptsRes, groupsRes] = await Promise.all([
         API.get('slots/'),
         API.get('courses/'),
         API.get('venues/'),
         API.get('cohorts/'),
         API.get('departments/'),
+        API.get('groups/'),
       ]);
       setSchedules(slotsRes.data.map(slot => ({
         course_code: (slot.course_detail || '').split(' - ')[0] || `ID:${slot.course}`,
@@ -50,6 +64,7 @@ export default function OfficerDashboard() {
       setVenues(venuesRes.data);
       setCohorts(cohortsRes.data);
       setDepartments(deptsRes.data);
+      setGroups(groupsRes.data);
     } catch (e) {
       setError('Failed to load data');
     } finally {
@@ -118,9 +133,10 @@ export default function OfficerDashboard() {
         unit: parseInt(courseForm.unit),
         department: courseForm.department ? parseInt(courseForm.department) : null,
         cohorts: courseForm.selectedCohorts,
+        has_practical: courseForm.hasPractical,
       });
       msg(true, 'Course created');
-      setCourseForm({ code: '', title: '', unit: 2, department: '', selectedCohorts: [] });
+      setCourseForm({ code: '', title: '', unit: 2, department: '', selectedCohorts: [], hasPractical: false });
       fetchAll();
     } catch (e) {
       msg(false, e.response?.data?.code?.[0] || JSON.stringify(e.response?.data) || 'Failed to create course');
@@ -199,6 +215,88 @@ export default function OfficerDashboard() {
     }
   };
 
+  const toggleGroupDepartment = (id) => {
+    setGroupForm(f => ({
+      ...f,
+      selectedDepartments: f.selectedDepartments.includes(id)
+        ? f.selectedDepartments.filter(d => d !== id)
+        : [...f.selectedDepartments, id]
+    }));
+  };
+
+  const handleCreateGroup = async (e) => {
+    e.preventDefault();
+    if (!groupForm.name.trim()) {
+      msg(false, 'Group name is required (e.g. A, B, 1, 2)');
+      return;
+    }
+    if (groupForm.selectedDepartments.length === 0) {
+      msg(false, 'Select at least one department for this group');
+      return;
+    }
+    try {
+      await API.post('groups/', {
+        level: groupForm.level,
+        scheme: groupForm.scheme,
+        name: groupForm.name.trim(),
+        departments: groupForm.selectedDepartments,
+      });
+      msg(true, 'Group created');
+      setGroupForm({ level: '100L', scheme: 'GENERAL', name: '', selectedDepartments: [] });
+      fetchAll();
+    } catch (e) {
+      msg(false, 'Failed to create group');
+    }
+  };
+
+  const handleDeleteGroup = async (id) => {
+    if (!window.confirm('Delete this group? Courses linked to it will lose this grouping.')) return;
+    try {
+      await API.delete(`groups/${id}/`);
+      msg(true, 'Group deleted');
+      fetchAll();
+    } catch (e) {
+      msg(false, 'Delete failed');
+    }
+  };
+
+  const openAssignPanel = (course) => {
+    if (openAssign === course.id) {
+      setOpenAssign(null);
+      return;
+    }
+    setAssignSelections(s => ({
+      ...s,
+      [course.id]: (course.student_groups_detail || []).map(g => g.id)
+    }));
+    setOpenAssign(course.id);
+  };
+
+  const toggleAssignGroup = (courseId, groupId) => {
+    setAssignSelections(s => {
+      const current = s[courseId] || [];
+      return {
+        ...s,
+        [courseId]: current.includes(groupId)
+          ? current.filter(g => g !== groupId)
+          : [...current, groupId]
+      };
+    });
+  };
+
+  const handleSaveGroupAssignment = async (courseId) => {
+    try {
+      await API.patch(`courses/${courseId}/`, {
+        student_groups: assignSelections[courseId] || []
+      });
+      msg(true, 'Groups updated for course');
+      setOpenAssign(null);
+      fetchAll();
+    } catch (e) {
+      msg(false, 'Failed to update groups');
+    }
+  };
+
   const handleLogout = () => { localStorage.removeItem('token'); window.location.href = '/login'; };
 
   const pendingCourses = courses.filter(c => c.status === 'PENDING');
@@ -231,10 +329,10 @@ export default function OfficerDashboard() {
         </div>
       </div>
 
-      <div className="flex border-b border-slate-200 bg-white px-4">
+      <div className="flex border-b border-slate-200 bg-white px-4 overflow-x-auto">
         {TABS.map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 text-[11px] font-bold border-b-2 transition-colors ${tab === t ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+            className={`px-4 py-2 text-[11px] font-bold border-b-2 whitespace-nowrap transition-colors ${tab === t ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
             {t}{t === 'PENDING REVIEW' && (pendingCourses.length + pendingVenues.length) > 0 ? ` (${pendingCourses.length + pendingVenues.length})` : ''}
           </button>
         ))}
@@ -302,6 +400,13 @@ export default function OfficerDashboard() {
                   </div>
                 </div>
 
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="checkbox" checked={courseForm.hasPractical}
+                    onChange={e => setCourseForm({...courseForm, hasPractical: e.target.checked})}
+                    className="w-3 h-3" />
+                  <span className="text-[10px] text-slate-700">Has a practical/lab component</span>
+                </label>
+
                 <button type="submit" className="w-full py-2 bg-slate-900 text-white text-xs font-bold rounded hover:bg-slate-700">
                   ADD COURSE
                 </button>
@@ -319,21 +424,62 @@ export default function OfficerDashboard() {
 
             <div className="bg-white border border-slate-200 rounded-lg shadow-sm">
               <div className="p-3 border-b border-slate-100 text-xs font-bold text-slate-700">COURSES ({courses.length})</div>
-              <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
+              <div className="divide-y divide-slate-100 max-h-[32rem] overflow-y-auto">
                 {courses.map(c => (
-                  <div key={c.id} className="flex items-center justify-between p-3">
-                    <div>
-                      <div className="text-xs font-bold text-slate-800">{c.code}</div>
-                      <div className="text-[10px] text-slate-500">{c.title} · {c.unit}u</div>
-                      <div className="text-[10px] text-blue-500">
-                        {c.cohorts_detail?.map(cd => cd.label).join(', ') || 'No cohorts'}
+                  <div key={c.id} className="p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-xs font-bold text-slate-800">{c.code}</div>
+                        <div className="text-[10px] text-slate-500">{c.title} · {c.unit}u{c.has_practical ? ' · Practical' : ''}</div>
+                        <div className="text-[10px] text-blue-500">
+                          {c.cohorts_detail?.map(cd => cd.label).join(', ') || 'No cohorts'}
+                        </div>
+                        <div className="text-[10px] text-purple-500">
+                          {c.student_groups_detail?.length > 0
+                            ? `Groups: ${c.student_groups_detail.map(g => g.label).join(', ')}`
+                            : 'No groups assigned'}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${STATUS_COLORS[c.status] || ''}`}>{c.status}</span>
+                        {c.status === 'APPROVED' && (
+                          <button onClick={() => openAssignPanel(c)}
+                            className="px-2 py-1 text-[10px] font-bold bg-purple-50 text-purple-600 border border-purple-200 rounded">
+                            {openAssign === c.id ? 'CLOSE' : 'GROUPS'}
+                          </button>
+                        )}
+                        <button onClick={() => handleDeleteCourse(c.id)}
+                          className="px-2 py-1 text-[10px] font-bold bg-red-50 text-red-600 border border-red-200 rounded">DEL</button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${STATUS_COLORS[c.status] || ''}`}>{c.status}</span>
-                      <button onClick={() => handleDeleteCourse(c.id)}
-                        className="px-2 py-1 text-[10px] font-bold bg-red-50 text-red-600 border border-red-200 rounded">DEL</button>
-                    </div>
+
+                    {openAssign === c.id && (
+                      <div className="mt-2 p-2 bg-slate-50 rounded border border-slate-200">
+                        <div className="text-[10px] font-bold text-slate-600 mb-1">ASSIGN GROUPS TO THIS COURSE</div>
+                        {groups.length === 0 ? (
+                          <div className="text-[10px] text-slate-400">No groups defined yet — create some in the GROUPS tab first</div>
+                        ) : (
+                          <div className="grid grid-cols-1 gap-1 max-h-32 overflow-y-auto">
+                            {groups.map(g => (
+                              <label key={g.id} className="flex items-center gap-1.5 cursor-pointer">
+                                <input type="checkbox"
+                                  checked={(assignSelections[c.id] || []).includes(g.id)}
+                                  onChange={() => toggleAssignGroup(c.id, g.id)}
+                                  className="w-3 h-3" />
+                                <span className="text-[10px] text-slate-700">
+                                  {g.level} · {SCHEMES.find(s => s.value === g.scheme)?.label || g.scheme} · {g.name}
+                                  {' — '}{g.departments_detail?.map(d => d.name).join(', ')}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                        <button onClick={() => handleSaveGroupAssignment(c.id)}
+                          className="mt-2 px-3 py-1 text-[10px] font-bold bg-slate-900 text-white rounded">
+                          SAVE
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -383,6 +529,83 @@ export default function OfficerDashboard() {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+
+        {tab === 'GROUPS' && (
+          <div className="max-w-2xl">
+            <div className="bg-white border border-slate-200 rounded-lg p-4 mb-4 shadow-sm">
+              <h2 className="text-xs font-bold text-slate-700 mb-3 uppercase">Create Group</h2>
+              <form onSubmit={handleCreateGroup} className="space-y-3">
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[10px] text-slate-500 mb-1">LEVEL</label>
+                    <select value={groupForm.level} onChange={e => setGroupForm({...groupForm, level: e.target.value})}
+                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      {LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-500 mb-1">SCHEME</label>
+                    <select value={groupForm.scheme} onChange={e => setGroupForm({...groupForm, scheme: e.target.value})}
+                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      {SCHEMES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-500 mb-1">NAME</label>
+                    <input value={groupForm.name} onChange={e => setGroupForm({...groupForm, name: e.target.value})}
+                      placeholder="A, B, 1, 2..." required
+                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] text-slate-500 mb-2">
+                    DEPARTMENTS IN THIS GROUP ({groupForm.selectedDepartments.length} selected)
+                  </label>
+                  <div className="border border-slate-200 rounded p-2 max-h-40 overflow-y-auto grid grid-cols-2 gap-1">
+                    {departments.map(d => (
+                      <label key={d.id} className="flex items-center gap-1.5 cursor-pointer hover:bg-slate-50 p-1 rounded">
+                        <input type="checkbox"
+                          checked={groupForm.selectedDepartments.includes(d.id)}
+                          onChange={() => toggleGroupDepartment(d.id)}
+                          className="w-3 h-3" />
+                        <span className="text-[10px] text-slate-700">{d.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <button type="submit" className="w-full py-2 bg-slate-900 text-white text-xs font-bold rounded hover:bg-slate-700">
+                  CREATE GROUP
+                </button>
+              </form>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-lg shadow-sm">
+              <div className="p-3 border-b border-slate-100 text-xs font-bold text-slate-700">DEFINED GROUPS ({groups.length})</div>
+              {groups.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-400">No groups defined yet</div>
+              ) : (
+                <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
+                  {groups.map(g => (
+                    <div key={g.id} className="flex items-center justify-between p-3">
+                      <div>
+                        <div className="text-xs font-bold text-slate-800">
+                          {g.level} — {SCHEMES.find(s => s.value === g.scheme)?.label || g.scheme} — {g.name}
+                        </div>
+                        <div className="text-[10px] text-slate-500">
+                          {g.departments_detail?.map(d => d.name).join(', ') || 'No departments'}
+                        </div>
+                      </div>
+                      <button onClick={() => handleDeleteGroup(g.id)}
+                        className="px-2 py-1 text-[10px] font-bold bg-red-50 text-red-600 border border-red-200 rounded">DEL</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}

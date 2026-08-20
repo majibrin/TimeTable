@@ -9,10 +9,13 @@ class TimetableEngine:
         self.min_temp = min_temp
 
         # Default weights — overridden by ConstraintSetting from DB
+        # NOTE: venue_capacity is treated as a SOFT constraint — only outright
+        # venue double-booking is a hard constraint. A tight-but-usable venue
+        # is a quality issue, not a feasibility blocker.
         default = {
             'venue_clash': 1000,
             'cohort_clash': 1000,
-            'venue_capacity': 1000,
+            'venue_capacity': 200,
             'faculty_break': 1000,
             'lecture_hours': 1000,
             'same_day_split': 100,
@@ -60,8 +63,8 @@ class TimetableEngine:
         for s in sessions_data:
             state.append({
                 'course_id': s['course_id'],
-                'group_kind': s.get('group_kind', 'COHORT'),  # 'COHORT' or 'GROUP'
-                'cohort_ids': s['cohort_ids'],   # list of clash-unit IDs (LevelCohort or StudentGroup)
+                'group_kind': s.get('group_kind', 'COHORT'),
+                'cohort_ids': s['cohort_ids'],
                 'venue_id': random.choice(venue_ids) if venue_ids else None,
                 'day_index': random.randint(0, 5),
                 'time_slot_index': random.choice([0,1,2,3,4,6,7,8,9]),
@@ -100,16 +103,16 @@ class TimetableEngine:
             dur = session['duration']
             v_id = session['venue_id']
             group_kind = session.get('group_kind', 'COHORT')
-            cohort_ids = session['cohort_ids']  # list
+            cohort_ids = session['cohort_ids']
             cr_id = session['course_id']
 
-            # Venue capacity — use largest clash-unit size (only meaningful for
-            # COHORT-based sessions today; GROUP-based sessions have no known
-            # size yet, so this check is skipped for them rather than guessed).
+            # Venue capacity — SOFT constraint. Only meaningful for
+            # COHORT-based sessions today; GROUP-based sessions have no
+            # known size yet, so this check is skipped for them.
             if v_id and cohort_ids and group_kind == 'COHORT':
                 max_cohort_size = max(cohort_caps.get(c, 0) for c in cohort_ids)
                 if max_cohort_size > venue_caps.get(v_id, 0):
-                    hard_penalty += w['venue_capacity']
+                    soft_penalty += w['venue_capacity']
 
             # Saturday soft penalty
             if d == 5:
@@ -132,15 +135,14 @@ class TimetableEngine:
                 if t == 5:
                     hard_penalty += w['faculty_break']
 
-                # Venue clash
+                # Venue clash — HARD (only actual double-booking)
                 if v_id:
                     v_key = (v_id, d, t)
                     if v_key in venue_grid:
                         hard_penalty += w['venue_clash']
                     venue_grid[v_key] = True
 
-                # Cohort/group clash — namespaced by group_kind so a
-                # StudentGroup id and a LevelCohort id never collide.
+                # Cohort/group clash — namespaced by group_kind
                 for c_id in cohort_ids:
                     c_key = (group_kind, c_id, d, t)
                     if c_key in cohort_grid:
