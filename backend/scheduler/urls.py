@@ -40,4 +40,5 @@ urlpatterns = [
     path('import/venues/', views.import_venues_csv),
     path('import/departments/', views.import_departments_csv),
     path('import/cohorts/', views.import_cohorts_csv),
+    #path('import/groups/', views.import_student_groups_csv), 
 ]

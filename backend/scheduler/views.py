@@ -599,19 +599,53 @@ def import_venues_csv(request):
     file = request.FILES.get('file')
     if not file:
         return JsonResponse({"error": "No file uploaded"}, status=400)
+    
     decoded = file.read().decode('utf-8')
     reader = csv.DictReader(io.StringIO(decoded))
+    
+    # Lowercase headers to tolerate alternative capitalization patterns
+    if reader.fieldnames:
+        reader.fieldnames = [f.strip().lower() for f in reader.fieldnames]
+        
     created = 0
     errors = []
+    
     for i, row in enumerate(reader, start=2):
         try:
+            venue_name = row.get('name', '').strip()
+            capacity_raw = row.get('capacity', '0').strip()
+            faculty_raw = row.get('faculty', '').strip()
+            dept_raw = row.get('department', '').strip()
+
+            # Dynamic Foreign Key Database Lookups
+            faculty_obj = Faculty.objects.filter(code__iexact=faculty_raw).first() or \
+                          Faculty.objects.filter(name__iexact=faculty_raw).first()
+                          
+            dept_obj = Department.objects.filter(code__iexact=dept_raw).first() or \
+                       Department.objects.filter(name__iexact=dept_raw).first()
+
+            if faculty_raw and not faculty_obj:
+                errors.append(f"Row {i}: Faculty reference '{faculty_raw}' not found in database.")
+                continue
+                
+            if dept_raw and not dept_obj:
+                errors.append(f"Row {i}: Department reference '{dept_raw}' not found in database.")
+                continue
+
+            # Atomically save changes to database rows with relations intact
             Venue.objects.update_or_create(
-                name=row['name'].strip(),
-                defaults={'capacity': int(row['capacity']), 'status': 'APPROVED'}
+                name=venue_name,
+                defaults={
+                    'capacity': int(capacity_raw or 0),
+                    'faculty': faculty_obj,
+                    'department': dept_obj,
+                    'status': 'APPROVED'
+                }
             )
             created += 1
         except Exception as e:
             errors.append(f"Row {i}: {str(e)}")
+            
     return JsonResponse({"created_or_updated": created, "errors": errors})
 
 
