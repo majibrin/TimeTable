@@ -13,7 +13,7 @@ export default function TimetableGrid({ schedules = [] }) {
 
   const cells = [];
 
-  // Header
+  // Header - Day
   cells.push(
     <div key="hdr-day"
       className="p-1 text-[10px] font-bold text-slate-700 text-center border border-slate-200 bg-slate-100"
@@ -21,6 +21,8 @@ export default function TimetableGrid({ schedules = [] }) {
       DAY
     </div>
   );
+
+  // Header - Time slots
   timeSlots.forEach((time, i) => {
     cells.push(
       <div key={`hdr-${time}`}
@@ -81,19 +83,44 @@ export default function TimetableGrid({ schedules = [] }) {
 
       cells.push(
         <div key={`${day}-${time}`}
-          className="border border-slate-200 p-0.5"
+          className="border border-slate-200 p-0.5 bg-white"
           style={{ gridColumn: `${colIdx + 2} / span ${maxDuration}`, gridRow }}>
-          <div className="flex flex-col gap-0.5">
-            {matched.map((cls, i) => (
-              <div key={i} className="bg-blue-50 border-l-2 border-blue-500 px-1 py-0.5 rounded-sm">
-                <div className="text-[9px] font-bold text-blue-900 truncate leading-tight">
-                  {cls.course_code}
+          <div className="flex flex-col gap-1 h-full justify-center">
+            {matched.map((cls, i) => {
+              let displayGroup = "";
+              if (cls.student_group_detail) {
+                const parts = cls.student_group_detail.split(' — ');
+                displayGroup = parts[parts.length - 1] || cls.student_group_detail;
+              }
+
+              return (
+                <div 
+                  key={i} 
+                  className="bg-blue-50/70 border-l-2 border-blue-500 px-1.5 py-1 rounded-md shadow-[0_2px_10px_rgba(59,130,246,0.02)] hover:shadow-[0_4px_15px_rgba(59,130,246,0.08)] hover:bg-blue-50 transition-all duration-200 ease-out cursor-pointer group"
+                >
+                  {/* 1a. SCROLLABLE COURSE & GROUP ROW: Swipes horizontally on single-line overflow */}
+                  <div 
+                    className="text-[9px] font-bold text-blue-900 leading-tight flex items-center justify-between gap-1 overflow-x-auto whitespace-nowrap scrollbar-none"
+                    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                  >
+                    <span>{cls.course_code}</span>
+                    {displayGroup && (
+                      <span className="text-[7px] bg-blue-100 text-blue-700 font-extrabold px-1 rounded-sm border border-blue-200/20 whitespace-nowrap">
+                        {displayGroup}
+                      </span>
+                    )}
+                  </div>
+                  
+                  {/* 1b. SCROLLABLE VENUE ROW: Swipes horizontally on single-line overflow */}
+                  <div 
+                    className="text-[8px] text-slate-500 mt-0.5 block overflow-x-auto whitespace-nowrap leading-tight transition-colors scrollbar-none"
+                    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                  >
+                    {cls.room || 'TBD'}
+                  </div>
                 </div>
-                <div className="text-[8px] text-slate-500 truncate leading-tight">
-                  {cls.room?.split(' ')[0]}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       );
@@ -101,7 +128,7 @@ export default function TimetableGrid({ schedules = [] }) {
   });
 
   return (
-    <div className="font-sans p-3 bg-white rounded-lg border border-slate-200 overflow-x-auto shadow-sm">
+    <div className="font-sans p-4 bg-white border border-slate-200 overflow-x-auto shadow-sm">
       <h3 className="text-sm font-bold text-slate-800 border-b-2 border-slate-900 pb-2 mb-3 tracking-tight">
         TIMETABLE MATRIX
       </h3>

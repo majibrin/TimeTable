@@ -871,3 +871,154 @@ def import_cohorts_csv(request):
         except Exception as e:
             errors.append(f"Row {i}: {str(e)}")
     return JsonResponse({"created_or_updated": created, "errors": errors})
+
+
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def import_student_groups_csv(request):
+    """
+    Imports student groups from a CSV file.
+    CSV Format: scheme, name, level, course_code, departments
+    """
+    user, err = require_roles(request, ['SUPER_ADMIN', 'TIMETABLE_OFFICER'])
+    if err:
+        return err
+        
+    file = request.FILES.get('file')
+    if not file:
+        return JsonResponse({"error": "No file uploaded"}, status=400)
+
+    try:
+        decoded = file.read().decode('utf-8')
+        reader = csv.DictReader(io.StringIO(decoded))
+        
+        # Standardize headers to lowercase to match lookups safely
+        if reader.fieldnames:
+            reader.fieldnames = [f.strip().lower() for f in reader.fieldnames]
+
+        created = 0
+        errors = []
+
+        with transaction.atomic():
+            for i, row in enumerate(reader, start=2):
+                scheme_val = row.get('scheme', '').strip().upper()
+                group_name = row.get('name', '').strip()
+                level_str = row.get('level', '').strip().upper()
+                course_code = row.get('course_code', '').strip().upper()
+                depts_raw = row.get('departments', '').strip()
+
+                if not (scheme_val and group_name and level_str):
+                    errors.append(f"Row {i}: Missing required cells (scheme, name, level).")
+                    continue
+
+                if scheme_val not in ['GENERAL', 'COURSE_SPECIFIC', 'PRACTICAL']:
+                    errors.append(f"Row {i}: Invalid scheme type '{scheme_val}'.")
+                    continue
+
+                # Course-specific uniqueness mapping logic
+                course_obj = None
+                if scheme_val == 'COURSE_SPECIFIC':
+                    if not course_code:
+                        errors.append(f"Row {i}: Course-specific entries require a 'course_code'.")
+                        continue
+                    course_obj = Course.objects.filter(code__iexact=course_code).first()
+                    if not course_obj:
+                        errors.append(f"Row {i}: Course '{course_code}' not found in database.")
+                        continue
+
+                # Parse and look up Many-to-Many departments safely
+                resolved_depts = []
+                dept_error = False
+                if depts_raw:
+                    dept_items = [d.strip() for d in depts_raw.split(',') if d.strip()]
+                    for item in dept_items:
+                        dept = Department.objects.filter(name__iexact=item).first() or \
+                               Department.objects.filter(code__iexact=item).first()
+                        if dept:
+                            resolved_depts.append(dept)
+                        else:
+                            errors.append(f"Row {i}: Department '{item}' not found.")
+                            dept_error = True
+                            break
+                if dept_error:
+                    continue
+
+                # Resolve group instance and enforce inverse Course-M2M scope rules
+                student_group = None
+                if scheme_val == 'COURSE_SPECIFIC' and course_obj:
+                    student_group = course_obj.student_groups.filter(
+                        level=level_str, scheme=scheme_val, name=group_name
+                    ).first()
+                    
+                    if not student_group:
+                        student_group = StudentGroup.objects.create(
+                            level=level_str, scheme=scheme_val, name=group_name
+                        )
+                        course_obj.student_groups.add(student_group)
+                        created += 1
+                else:
+                    student_group, is_new = StudentGroup.objects.get_or_create(
+                        level=level_str, scheme=scheme_val, name=group_name
+                    )
+                    if is_new:
+                        created += 1
+
+                # Update the department assignments
+                if resolved_depts:
+                    student_group.departments.set(resolved_depts)
+
+        return JsonResponse({"created_or_updated": created, "errors": errors})
+
+    except Exception as e:
+        return JsonResponse({"error": f"Import breakdown: {str(e)}"}, status=500)
+
+
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def import_faculties_csv(request):
+    """
+    Ingests a flat CSV dataset to batch-register university faculties.
+    Expected CSV columns: name, code
+    """
+    user, err = require_roles(request, ['SUPER_ADMIN', 'TIMETABLE_OFFICER'])
+    if err:
+        return err
+        
+    file = request.FILES.get('file')
+    if not file:
+        return JsonResponse({"error": "No file uploaded"}, status=400)
+
+    try:
+        decoded = file.read().decode('utf-8')
+        reader = csv.DictReader(io.StringIO(decoded))
+        
+        if reader.fieldnames:
+            reader.fieldnames = [f.strip().lower() for f in reader.fieldnames]
+
+        created = 0
+        errors = []
+
+        with transaction.atomic():
+            for i, row in enumerate(reader, start=2):
+                name_str = row.get('name', '').strip()
+                code_str = row.get('code', '').strip().upper()
+
+                if not (name_str and code_str):
+                    errors.append(f"Row {i}: Missing required column data (name or code).")
+                    continue
+
+                # Enforce system integrity by evaluating codes uniquely
+                Faculty.objects.update_or_create(
+                    code=code_str,
+                    defaults={
+                        'name': name_str
+                    }
+                )
+                created += 1
+
+        return JsonResponse({"created_or_updated": created, "errors": errors})
+
+    except Exception as e:
+        return JsonResponse({"error": f"Faculty ingestion pipeline broke: {str(e)}"}, status=500)

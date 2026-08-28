@@ -62,6 +62,7 @@ export default function OfficerDashboard() {
       setSchedules(slotsRes.data.map(slot => ({
         course_code: (slot.course_detail || '').split(' - ')[0] || `ID:${slot.course}`,
         room: slot.venue_name || 'TBD',
+        student_group_detail: slot.student_group_detail,
         day: (slot.day || 'MON').toUpperCase().substring(0, 3),
         start_time: slot.start_time ? slot.start_time.substring(0, 5) : '08:00',
         duration: parseInt(slot.duration || 1, 10),
@@ -641,7 +642,8 @@ export default function OfficerDashboard() {
           </div>
         )}
 
-        {tab === 'GROUPS' && (
+
+                {tab === 'GROUPS' && (
           <div>
             <div className="bg-white border border-slate-200 rounded-lg p-4 md:p-6 mb-4 shadow-sm">
               <h2 className="text-xs font-bold text-slate-700 mb-3 uppercase">Create Group</h2>
@@ -706,6 +708,19 @@ export default function OfficerDashboard() {
                   CREATE GROUP
                 </button>
               </form>
+
+              {/* ─── NEW BULK IMPORT BOX ─── */}
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <label className="block text-xs text-slate-500 mb-1 font-medium">
+                  BULK IMPORT GROUPS VIA CSV (scheme, name, level, course_code, departments)
+                </label>
+                <input 
+                  type="file" 
+                  accept=".csv" 
+                  onChange={(e) => handleImportCSV(e, 'import/groups/')} 
+                  className="text-xs text-slate-600 w-full sm:w-auto mt-1 cursor-pointer" 
+                />
+              </div>
             </div>
 
             <div className="bg-white border border-slate-200 rounded-lg shadow-sm">
@@ -736,20 +751,29 @@ export default function OfficerDashboard() {
           </div>
         )}
 
-        {tab === 'DEPARTMENTS' && (
+                {tab === 'DEPARTMENTS' && (
           <div className="space-y-4">
+            {/* 1. Add Faculty Section Card */}
             <div className="bg-white border border-slate-200 rounded-lg p-4 md:p-6 shadow-sm">
               <h2 className="text-xs font-bold text-slate-700 mb-3 uppercase">Add Faculty</h2>
               <form onSubmit={handleCreateFaculty} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-slate-500 mb-1">NAME</label>
-                  <input value={facultyForm.name} onChange={e => setFacultyForm({...facultyForm, name: e.target.value})} required
-                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  <input 
+                    value={facultyForm.name} 
+                    onChange={e => setFacultyForm({...facultyForm, name: e.target.value})} 
+                    required
+                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" 
+                  />
                 </div>
                 <div>
                   <label className="block text-xs text-slate-500 mb-1">CODE</label>
-                  <input value={facultyForm.code} onChange={e => setFacultyForm({...facultyForm, code: e.target.value})} required
-                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  <input 
+                    value={facultyForm.code} 
+                    onChange={e => setFacultyForm({...facultyForm, code: e.target.value})} 
+                    required
+                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" 
+                  />
                 </div>
                 <div className="col-span-1 sm:col-span-2">
                   <button type="submit" className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition-colors">
@@ -757,6 +781,20 @@ export default function OfficerDashboard() {
                   </button>
                 </div>
               </form>
+
+              {/* Bulk Import Faculties CSV Box Element */}
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <label className="block text-xs text-slate-500 mb-1 font-medium">
+                  BULK IMPORT FACULTIES CSV (name, code)
+                </label>
+                <input 
+                  type="file" 
+                  accept=".csv" 
+                  onChange={(e) => handleImportCSV(e, 'import/faculties/')} 
+                  className="text-xs text-slate-600 w-full sm:w-auto mt-1 cursor-pointer" 
+                />
+              </div>
+
               <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
                 {faculties.length} faculties loaded
                 {faculties.length > 0 && (
@@ -765,25 +803,38 @@ export default function OfficerDashboard() {
               </div>
             </div>
 
+            {/* 2. Add Department Section Card */}
             <div className="bg-white border border-slate-200 rounded-lg p-4 md:p-6 shadow-sm">
               <h2 className="text-xs font-bold text-slate-700 mb-3 uppercase">Add Department</h2>
               <form onSubmit={handleCreateDepartment} className="space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-slate-500 mb-1">NAME</label>
-                    <input value={deptForm.name} onChange={e => setDeptForm({...deptForm, name: e.target.value})} required
-                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    <input 
+                      value={deptForm.name} 
+                      onChange={e => setDeptForm({...deptForm, name: e.target.value})} 
+                      required
+                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" 
+                    />
                   </div>
                   <div>
                     <label className="block text-xs text-slate-500 mb-1">CODE</label>
-                    <input value={deptForm.code} onChange={e => setDeptForm({...deptForm, code: e.target.value})} required
-                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    <input 
+                      value={deptForm.code} 
+                      onChange={e => setDeptForm({...deptForm, code: e.target.value})} 
+                      required
+                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" 
+                    />
                   </div>
                 </div>
                 <div>
                   <label className="block text-xs text-slate-500 mb-1">FACULTY</label>
-                  <select value={deptForm.faculty} onChange={e => setDeptForm({...deptForm, faculty: e.target.value})} required
-                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400">
+                  <select 
+                    value={deptForm.faculty} 
+                    onChange={e => setDeptForm({...deptForm, faculty: e.target.value})} 
+                    required
+                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  >
                     <option value="">-- Select Faculty --</option>
                     {faculties.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                   </select>
@@ -793,19 +844,29 @@ export default function OfficerDashboard() {
                 </button>
               </form>
               <div className="mt-3 pt-3 border-t border-slate-100">
-                <label className="block text-xs text-slate-500 mb-1">BULK IMPORT CSV (name, code, faculty)</label>
-                <input type="file" accept=".csv" onChange={e => handleImportCSV(e, 'import/departments/')} className="text-xs text-slate-600 w-full sm:w-auto" />
+                <label className="block text-xs text-slate-500 mb-1 font-medium">BULK IMPORT DEPARTMENTS CSV (name, code, faculty)</label>
+                <input 
+                  type="file" 
+                  accept=".csv" 
+                  onChange={e => handleImportCSV(e, 'import/departments/')} 
+                  className="text-xs text-slate-600 w-full sm:w-auto mt-1 cursor-pointer" 
+                />
                 <div className="mt-2 text-xs text-slate-500">{departments.length} departments loaded</div>
               </div>
             </div>
 
+            {/* 3. Add Cohort Section Card */}
             <div className="bg-white border border-slate-200 rounded-lg p-4 md:p-6 shadow-sm">
               <h2 className="text-xs font-bold text-slate-700 mb-3 uppercase">Add Cohort</h2>
               <form onSubmit={handleCreateCohort} className="space-y-3">
                 <div>
                   <label className="block text-xs text-slate-500 mb-1">DEPARTMENT</label>
-                  <select value={cohortForm.department} onChange={e => setCohortForm({...cohortForm, department: e.target.value})} required
-                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400">
+                  <select 
+                    value={cohortForm.department} 
+                    onChange={e => setCohortForm({...cohortForm, department: e.target.value})} 
+                    required
+                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  >
                     <option value="">-- Select Department --</option>
                     {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
@@ -813,16 +874,23 @@ export default function OfficerDashboard() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-slate-500 mb-1">LEVEL</label>
-                    <select value={cohortForm.level} onChange={e => setCohortForm({...cohortForm, level: e.target.value})}
-                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <select 
+                      value={cohortForm.level} 
+                      onChange={e => setCohortForm({...cohortForm, level: e.target.value})}
+                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    >
                       {LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="block text-xs text-slate-500 mb-1">STUDENT COUNT</label>
-                    <input type="number" value={cohortForm.studentCount} onChange={e => setCohortForm({...cohortForm, studentCount: e.target.value})}
+                    <input 
+                      type="number" 
+                      value={cohortForm.studentCount} 
+                      onChange={e => setCohortForm({...cohortForm, studentCount: e.target.value})}
                       placeholder="e.g. 80"
-                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" 
+                    />
                   </div>
                 </div>
                 <button type="submit" className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition-colors">
@@ -830,13 +898,19 @@ export default function OfficerDashboard() {
                 </button>
               </form>
               <div className="mt-3 pt-3 border-t border-slate-100">
-                <label className="block text-xs text-slate-500 mb-1">BULK IMPORT CSV (department, level, student_count)</label>
-                <input type="file" accept=".csv" onChange={e => handleImportCSV(e, 'import/cohorts/')} className="text-xs text-slate-600 w-full sm:w-auto" />
+                <label className="block text-xs text-slate-500 mb-1 font-medium">BULK IMPORT COHORTS CSV (department, level, student_count)</label>
+                <input 
+                  type="file" 
+                  accept=".csv" 
+                  onChange={e => handleImportCSV(e, 'import/cohorts/')} 
+                  className="text-xs text-slate-600 w-full sm:w-auto mt-1 cursor-pointer" 
+                />
                 <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">{cohorts.length} cohorts loaded</div>
               </div>
             </div>
           </div>
         )}
+
 
         {tab === 'PENDING REVIEW' && (
           <div className="space-y-4">
