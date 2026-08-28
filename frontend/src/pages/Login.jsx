@@ -28,7 +28,7 @@ export default function Login() {
   };
 
   return (
-    <div className="flex justify-center items-center min-h-screen bg-slate-50 font-mono p-4">
+    <div className="flex justify-center items-center min-h-screen bg-slate-50 font-sans p-4">
       <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md border border-slate-200">
         <h2 className="text-center text-2xl font-bold text-slate-800 tracking-wider mb-6">SYSTEM GATEWAY</h2>
         

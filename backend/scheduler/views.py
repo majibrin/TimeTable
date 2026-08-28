@@ -61,6 +61,7 @@ def index(request):
     return Response({
         "username": user.username,
         "role": user.role,
+        "department": user.department_id,
         "first_name": user.first_name,
         "last_name": user.last_name,
         "email": user.email,
@@ -83,6 +84,7 @@ def login_view(request):
         "refresh": str(refresh),
         "username": user.username,
         "role": user.role,
+        "department": user.department_id,
         "first_name": user.first_name,
         "last_name": user.last_name,
     })
@@ -772,3 +774,66 @@ def publish_timetable(request):
         return err
     count = SessionSlot.objects.filter(is_published=False).update(is_published=True)
     return JsonResponse({"status": "Published", "slots_published": count})
+
+
+# ─── Department / Cohort CSV Import ──────────────────────────────────────────
+
+@csrf_exempt
+def import_departments_csv(request):
+    if request.method != 'POST':
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    user, err = require_roles(request, ['SUPER_ADMIN', 'TIMETABLE_OFFICER'])
+    if err:
+        return err
+    file = request.FILES.get('file')
+    if not file:
+        return JsonResponse({"error": "No file uploaded"}, status=400)
+    decoded = file.read().decode('utf-8')
+    reader = csv.DictReader(io.StringIO(decoded))
+    created = 0
+    errors = []
+    for i, row in enumerate(reader, start=2):
+        try:
+            faculty_name = row.get('faculty', '').strip()
+            faculty = Faculty.objects.get(name__iexact=faculty_name)
+            Department.objects.update_or_create(
+                name=row['name'].strip(),
+                defaults={'code': row['code'].strip(), 'faculty': faculty}
+            )
+            created += 1
+        except Faculty.DoesNotExist:
+            errors.append(f"Row {i}: Faculty '{faculty_name}' not found")
+        except Exception as e:
+            errors.append(f"Row {i}: {str(e)}")
+    return JsonResponse({"created_or_updated": created, "errors": errors})
+
+
+@csrf_exempt
+def import_cohorts_csv(request):
+    if request.method != 'POST':
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    user, err = require_roles(request, ['SUPER_ADMIN', 'TIMETABLE_OFFICER'])
+    if err:
+        return err
+    file = request.FILES.get('file')
+    if not file:
+        return JsonResponse({"error": "No file uploaded"}, status=400)
+    decoded = file.read().decode('utf-8')
+    reader = csv.DictReader(io.StringIO(decoded))
+    created = 0
+    errors = []
+    for i, row in enumerate(reader, start=2):
+        try:
+            dept_name = row.get('department', '').strip()
+            dept = Department.objects.get(name__iexact=dept_name)
+            LevelCohort.objects.update_or_create(
+                department=dept,
+                level=row['level'].strip(),
+                defaults={'student_count': int(row.get('student_count', 0) or 0)}
+            )
+            created += 1
+        except Department.DoesNotExist:
+            errors.append(f"Row {i}: Department '{dept_name}' not found")
+        except Exception as e:
+            errors.append(f"Row {i}: {str(e)}")
+    return JsonResponse({"created_or_updated": created, "errors": errors})

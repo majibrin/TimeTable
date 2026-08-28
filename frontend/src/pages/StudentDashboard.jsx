@@ -57,7 +57,7 @@ function Countdown({ minutesUntil }) {
     <div className="flex gap-3 justify-center mt-2">
       {[['HRS', h], ['MIN', m], ['SEC', s]].map(([label, val]) => (
         <div key={label} className="text-center">
-          <div className="text-2xl font-bold text-blue-600 font-mono">{String(val).padStart(2, '0')}</div>
+          <div className="text-2xl font-bold text-blue-600 font-sans">{String(val).padStart(2, '0')}</div>
           <div className="text-[9px] text-slate-400 tracking-widest">{label}</div>
         </div>
       ))}
@@ -117,7 +117,7 @@ export default function StudentDashboard() {
   const handleLogout = () => { localStorage.removeItem('token'); window.location.href = '/login'; };
 
   return (
-    <div className="min-h-screen bg-slate-50 font-mono">
+    <div className="min-h-screen bg-slate-50 font-sans">
       <div className="bg-white border-b border-slate-200 px-4 py-3 flex justify-between items-center">
         <div>
           <h1 className="text-sm font-bold text-slate-900">STUDENT</h1>

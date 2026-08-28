@@ -118,10 +118,15 @@ class TimetableEngine:
             if d == 5:
                 soft_penalty += w['saturday_lectures']
 
-            # Track days for split course soft constraint
-            if cr_id not in course_days:
-                course_days[cr_id] = []
-            course_days[cr_id].append(d)
+            # Track days for split course soft constraint — keyed per
+            # (course, group_kind, specific group/cohort set) so that each
+            # group's own 2hr+1hr split is tracked independently. Without
+            # this, a course with multiple groups would silently only ever
+            # check the first group's pair of sessions.
+            split_key = (cr_id, group_kind, tuple(sorted(cohort_ids)))
+            if split_key not in course_days:
+                course_days[split_key] = []
+            course_days[split_key].append(d)
 
             occupied_slots = range(t_start, t_start + dur)
 
@@ -149,9 +154,10 @@ class TimetableEngine:
                         hard_penalty += w['cohort_clash']
                     cohort_grid[c_key] = True
 
-        # Same day split soft constraint
-        for cr_id, days in course_days.items():
-            if len(days) > 1 and days[0] == days[1]:
+        # Same day split soft constraint — for each group's own split pair,
+        # penalize if any two of its sessions land on the same day.
+        for split_key, days in course_days.items():
+            if len(days) > 1 and len(set(days)) < len(days):
                 soft_penalty += w['same_day_split']
 
         return hard_penalty + soft_penalty

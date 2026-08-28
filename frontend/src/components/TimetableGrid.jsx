@@ -101,7 +101,7 @@ export default function TimetableGrid({ schedules = [] }) {
   });
 
   return (
-    <div className="font-mono p-3 bg-white rounded-lg border border-slate-200 overflow-x-auto shadow-sm">
+    <div className="font-sans p-3 bg-white rounded-lg border border-slate-200 overflow-x-auto shadow-sm">
       <h3 className="text-sm font-bold text-slate-800 border-b-2 border-slate-900 pb-2 mb-3 tracking-tight">
         TIMETABLE MATRIX
       </h3>

@@ -115,7 +115,7 @@ export default function DepartmentDashboard() {
   const handleLogout = () => { localStorage.removeItem('token'); window.location.href = '/login'; };
 
   return (
-    <div className="min-h-screen bg-slate-50 font-mono">
+    <div className="min-h-screen bg-slate-50 font-sans">
       <div className="bg-white border-b border-slate-200 px-4 py-3 flex justify-between items-center">
         <div>
           <h1 className="text-sm font-bold text-slate-900">DEPARTMENT</h1>

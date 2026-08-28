@@ -40,6 +40,12 @@ export default function SuperAdminDashboard() {
   const handleCreate = async (e) => {
     e.preventDefault();
     setError(''); setSuccess('');
+
+    if (form.role === 'DEPARTMENT' && !form.department) {
+      msg(false, 'Department is required for a Department-role account');
+      return;
+    }
+
     try {
       const payload = {
         username: form.username,
@@ -78,7 +84,7 @@ export default function SuperAdminDashboard() {
     : users;
 
   return (
-    <div className="min-h-screen bg-slate-50 font-mono">
+    <div className="min-h-screen bg-slate-50 font-sans">
       <div className="bg-white border-b border-slate-200 px-4 py-3 flex justify-between items-center">
         <div>
           <h1 className="text-sm font-bold text-slate-900">SUPER ADMIN</h1>
@@ -127,14 +133,15 @@ export default function SuperAdminDashboard() {
               </select>
             </div>
 
-            {form.role === 'STUDENT' && (
+            {(form.role === 'STUDENT' || form.role === 'DEPARTMENT') && (
               <div className="col-span-2">
                 <label className="block text-[10px] text-slate-500 mb-1 uppercase">
-                  Department (optional)
+                  Department {form.role === 'DEPARTMENT' ? '(required)' : '(optional)'}
                 </label>
                 <select
                   value={form.department}
                   onChange={e => setForm({...form, department: e.target.value})}
+                  required={form.role === 'DEPARTMENT'}
                   className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400"
                 >
                   <option value="">-- Select Department --</option>
