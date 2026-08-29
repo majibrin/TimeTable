@@ -11,7 +11,6 @@ function getNextSession(schedules) {
   const todayKey = DAY_MAP[now.getDay()];
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-  // Check today first, then upcoming days
   const orderedDays = [];
   const todayIdx = DAYS_ORDER.indexOf(todayKey);
   if (todayIdx !== -1) {
@@ -31,7 +30,6 @@ function getNextSession(schedules) {
       const [h, m] = session.start_time.split(':').map(Number);
       const sessionMinutes = h * 60 + m;
       if (day !== todayKey || sessionMinutes > currentMinutes) {
-        // Calculate minutes until
         let daysUntil = (DAYS_ORDER.indexOf(day) - DAYS_ORDER.indexOf(todayKey) + 6) % 6;
         const minutesUntil = daysUntil * 24 * 60 + (sessionMinutes - currentMinutes);
         return { session, minutesUntil, day };
@@ -117,23 +115,38 @@ export default function StudentDashboard() {
   const handleLogout = () => { localStorage.removeItem('token'); window.location.href = '/login'; };
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans">
-      <div className="bg-white border-b border-slate-200 px-4 py-3 flex justify-between items-center">
-        <div>
-          <h1 className="text-sm font-bold text-slate-900">STUDENT</h1>
-          <p className="text-[10px] text-slate-400">Faculty of Science — GSU</p>
+    <div className="min-h-screen bg-slate-50">
+      {/* Header */}
+      <div className="bg-white border-b border-slate-200/60 px-4 py-3">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h1 className="text-sm font-bold text-slate-900">STUDENT</h1>
+            <p className="text-[10px] sm:text-xs text-slate-400">Faculty of Science — GSU</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleExport} disabled={!schedules.length}
+              className="px-3 py-1.5 text-[10px] sm:text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
+              EXPORT PDF
+            </button>
+            <button onClick={handleLogout}
+              className="px-3 py-1.5 text-[10px] sm:text-xs font-bold border border-red-300 hover:bg-red-50 text-red-600 rounded transition-colors">
+              LOGOUT
+            </button>
+          </div>
         </div>
-        <button onClick={handleExport} disabled={!schedules.length} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded disabled:opacity-40">EXPORT PDF</button>
-        <button onClick={handleLogout} className="px-3 py-1.5 border border-red-200 text-red-600 text-xs font-bold rounded">LOGOUT</button>
       </div>
 
-      <div className="p-4">
-        {error && <div className="bg-red-50 text-red-700 text-xs p-3 rounded mb-3 border border-red-200">{error}</div>}
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 md:py-6">
+        {error && <div className="bg-red-50 text-red-700 text-xs p-3 rounded-xl mb-4 border border-red-200">{error}</div>}
 
-        <div className="bg-white border border-slate-200 rounded-lg p-4 mb-4 shadow-sm">
-          <label className="block text-[10px] text-slate-500 mb-1 uppercase">Select Your Department & Level</label>
+        {/* Cohort Selector */}
+        <div className="bg-white border border-slate-200/60 rounded-2xl p-5 mb-6 shadow-sm">
+          <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-2">
+            Select Your Department & Level
+          </label>
           <select value={selectedCohort} onChange={e => setSelectedCohort(e.target.value)}
-            className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400">
+            className="w-full px-3 py-2.5 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-slate-50/50 font-bold transition-all">
             <option value="">-- Select Cohort --</option>
             {cohorts.map(c => (
               <option key={c.id} value={c.id}>{c.department_name} — {c.level}</option>
@@ -141,21 +154,29 @@ export default function StudentDashboard() {
           </select>
         </div>
 
+        {/* Next Session Countdown */}
         {nextSession && (
-          <div className="bg-white border border-blue-200 rounded-lg p-4 mb-4 shadow-sm text-center">
-            <div className="text-[10px] text-slate-400 uppercase tracking-widest mb-1">Next Lecture</div>
-            <div className="text-sm font-bold text-slate-900">{nextSession.session.course_code}</div>
-            <div className="text-xs text-slate-500">{nextSession.day} · {nextSession.session.start_time} · {nextSession.session.room}</div>
-            <Countdown minutesUntil={nextSession.minutesUntil} />
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/60 rounded-2xl p-5 mb-6 shadow-sm">
+            <div className="text-center">
+              <div className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-1">Next Lecture</div>
+              <div className="text-base font-black text-slate-900">{nextSession.session.course_code}</div>
+              <div className="text-xs font-bold text-slate-500 mt-0.5">
+                {nextSession.day} · {nextSession.session.start_time} · {nextSession.session.room}
+              </div>
+              <Countdown minutesUntil={nextSession.minutesUntil} />
+            </div>
           </div>
         )}
 
+        {/* Timetable */}
         {loading ? (
-          <div className="text-center text-xs text-slate-400 py-12">Loading timetable...</div>
+          <div className="text-center text-xs text-slate-400 py-12 bg-white rounded-2xl border border-slate-200/60 p-8">Loading timetable...</div>
         ) : selectedCohort && schedules.length === 0 ? (
-          <div className="text-center text-xs text-slate-400 py-12">No published timetable for this cohort yet</div>
+          <div className="text-center text-xs text-slate-400 py-12 bg-white rounded-2xl border border-slate-200/60 p-8">No published timetable for this cohort yet</div>
         ) : selectedCohort ? (
-          <TimetableGrid schedules={schedules} />
+          <div className="bg-white rounded-2xl border border-slate-200/60 p-4 shadow-sm">
+            <TimetableGrid schedules={schedules} />
+          </div>
         ) : null}
       </div>
     </div>

@@ -84,127 +84,146 @@ export default function SuperAdminDashboard() {
     : users;
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans">
-      <div className="bg-white border-b border-slate-200 px-4 py-3 flex justify-between items-center">
-        <div>
-          <h1 className="text-sm font-bold text-slate-900">SUPER ADMIN</h1>
-          <p className="text-[10px] text-slate-400">User Management — GSU Timetable System</p>
+    <div className="min-h-screen bg-slate-50">
+      {/* Header */}
+      <div className="bg-white border-b border-slate-200/60 px-4 py-3">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h1 className="text-sm font-bold text-slate-900">SUPER ADMIN</h1>
+            <p className="text-[10px] sm:text-xs text-slate-400">User Management — GSU Timetable System</p>
+          </div>
+          <button onClick={handleLogout}
+            className="px-3 py-1.5 text-[10px] sm:text-xs font-bold border border-red-300 hover:bg-red-50 text-red-600 rounded transition-colors">
+            LOGOUT
+          </button>
         </div>
-        <button onClick={handleLogout}
-          className="px-3 py-1.5 border border-red-200 text-red-600 rounded text-xs font-bold">
-          LOGOUT
-        </button>
       </div>
 
-      <div className="p-4 max-w-3xl mx-auto">
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 md:py-6">
         {error && <div className="bg-red-50 text-red-700 text-xs p-3 rounded mb-4 border border-red-200">{error}</div>}
         {success && <div className="bg-green-50 text-green-700 text-xs p-3 rounded mb-4 border border-green-200">{success}</div>}
 
-        <div className="bg-white border border-slate-200 rounded-lg p-4 mb-6 shadow-sm">
-          <h2 className="text-xs font-bold text-slate-700 mb-3 uppercase tracking-wider">Create User</h2>
-          <form onSubmit={handleCreate} className="grid grid-cols-2 gap-3">
-            {[
-              ['username', 'Username', 'text'],
-              ['email', 'Email', 'email'],
-              ['first_name', 'First Name', 'text'],
-              ['last_name', 'Last Name', 'text'],
-              ['password', 'Password', 'password'],
-            ].map(([field, label, type]) => (
-              <div key={field}>
-                <label className="block text-[10px] text-slate-500 mb-1 uppercase">{label}</label>
-                <input
-                  type={type}
-                  value={form[field]}
-                  onChange={e => setForm({...form, [field]: e.target.value})}
-                  required
-                  className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400"
-                />
-              </div>
-            ))}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          {/* Form Column - Left */}
+          <div className="lg:col-span-2">
+            <div className="bg-white border border-slate-200/60 rounded-lg p-5 shadow-sm sticky top-[200px]">
+              <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-4">Create User</h2>
+              <form onSubmit={handleCreate} className="space-y-3">
+                {[
+                  ['username', 'Username', 'text'],
+                  ['email', 'Email', 'email'],
+                  ['first_name', 'First Name', 'text'],
+                  ['last_name', 'Last Name', 'text'],
+                  ['password', 'Password', 'password'],
+                ].map(([field, label, type]) => (
+                  <div key={field}>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">{label}</label>
+                    <input
+                      type={type}
+                      value={form[field]}
+                      onChange={e => setForm({...form, [field]: e.target.value})}
+                      required
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-600/20 focus:border-blue-600 bg-slate-50/50 transition-all font-medium"
+                    />
+                  </div>
+                ))}
 
-            <div>
-              <label className="block text-[10px] text-slate-500 mb-1 uppercase">Role</label>
-              <select
-                value={form.role}
-                onChange={e => setForm({...form, role: e.target.value, department: ''})}
-                className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400"
-              >
-                {ROLES.map(r => <option key={r} value={r}>{r.replace('_', ' ')}</option>)}
-              </select>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Role</label>
+                  <select
+                    value={form.role}
+                    onChange={e => setForm({...form, role: e.target.value, department: ''})}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-600/20 focus:border-blue-600 bg-slate-50/50 transition-all font-bold"
+                  >
+                    {ROLES.map(r => <option key={r} value={r}>{r.replace('_', ' ')}</option>)}
+                  </select>
+                </div>
+
+                {(form.role === 'STUDENT' || form.role === 'DEPARTMENT') && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                      Department {form.role === 'DEPARTMENT' ? '(required)' : '(optional)'}
+                    </label>
+                    <select
+                      value={form.department}
+                      onChange={e => setForm({...form, department: e.target.value})}
+                      required={form.role === 'DEPARTMENT'}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-600/20 focus:border-blue-600 bg-slate-50/50 transition-all font-bold"
+                    >
+                      <option value="">-- Select Department --</option>
+                      {departments.map(d => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <button type="submit"
+                  className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-black rounded transition-colors shadow-sm">
+                  CREATE USER
+                </button>
+              </form>
             </div>
-
-            {(form.role === 'STUDENT' || form.role === 'DEPARTMENT') && (
-              <div className="col-span-2">
-                <label className="block text-[10px] text-slate-500 mb-1 uppercase">
-                  Department {form.role === 'DEPARTMENT' ? '(required)' : '(optional)'}
-                </label>
-                <select
-                  value={form.department}
-                  onChange={e => setForm({...form, department: e.target.value})}
-                  required={form.role === 'DEPARTMENT'}
-                  className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400"
-                >
-                  <option value="">-- Select Department --</option>
-                  {departments.map(d => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div className="col-span-2">
-              <button type="submit"
-                className="w-full py-2 bg-slate-900 text-white text-xs font-bold rounded hover:bg-slate-700">
-                CREATE USER
-              </button>
-            </div>
-          </form>
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-lg shadow-sm">
-          <div className="p-3 border-b border-slate-100 flex justify-between items-center">
-            <h2 className="text-xs font-bold text-slate-700 uppercase">Users ({filteredUsers.length})</h2>
-            <select
-              value={filterRole}
-              onChange={e => setFilterRole(e.target.value)}
-              className="px-2 py-1 text-[10px] border border-slate-200 rounded focus:outline-none">
-              <option value="">All Roles</option>
-              {ROLES.map(r => <option key={r} value={r}>{r.replace('_', ' ')}</option>)}
-            </select>
           </div>
 
-          {loading ? (
-            <div className="p-8 text-center text-xs text-slate-400">Loading...</div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {filteredUsers.map(u => (
-                <div key={u.id} className="flex items-center justify-between p-3">
-                  <div>
-                    <div className="text-xs font-bold text-slate-800">{u.username}</div>
-                    <div className="text-[10px] text-slate-400">
-                      {u.first_name} {u.last_name}
-                      {u.email ? ` · ${u.email}` : ''}
+          {/* List Column - Right */}
+          <div className="lg:col-span-3">
+            <div className="bg-white border border-slate-200/60 rounded-lg shadow-sm">
+              <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Users ({filteredUsers.length})</h2>
+                <select
+                  value={filterRole}
+                  onChange={e => setFilterRole(e.target.value)}
+                  className="px-3 py-1.5 text-[10px] font-bold border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-600/20 focus:border-blue-600 bg-slate-50/50 transition-all">
+                  <option value="">All Roles</option>
+                  {ROLES.map(r => <option key={r} value={r}>{r.replace('_', ' ')}</option>)}
+                </select>
+              </div>
+
+              {loading ? (
+                <div className="p-8 text-center text-xs text-slate-400">Loading...</div>
+              ) : filteredUsers.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-400">No users found</div>
+              ) : (
+                <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
+                  {filteredUsers.map(u => (
+                    <div key={u.id} className="flex flex-wrap items-center justify-between gap-2 p-4 hover:bg-slate-50/50 transition-colors">
+                      <div>
+                        <div className="text-xs font-bold text-slate-800">{u.username}</div>
+                        <div className="text-[10px] text-slate-500">
+                          {u.first_name} {u.last_name}
+                          {u.email ? ` · ${u.email}` : ''}
+                        </div>
+                        <div className="flex flex-wrap gap-2 mt-0.5">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                            u.role === 'SUPER_ADMIN' ? 'bg-purple-50 text-purple-600' :
+                            u.role === 'TIMETABLE_OFFICER' ? 'bg-blue-50 text-blue-600' :
+                            u.role === 'DEPARTMENT' ? 'bg-amber-50 text-amber-600' :
+                            'bg-green-50 text-green-600'
+                          }`}>
+                            {u.role.replace('_', ' ')}
+                          </span>
+                          {u.department_name && (
+                            <span className="text-[10px] text-slate-400">· {u.department_name}</span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleToggleActive(u.id, u.is_active)}
+                        className={`px-3 py-1.5 text-[10px] font-bold rounded transition-colors ${
+                          u.is_active
+                            ? 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100'
+                            : 'bg-green-50 text-green-600 border border-green-200 hover:bg-green-100'
+                        }`}>
+                        {u.is_active ? 'DEACTIVATE' : 'ACTIVATE'}
+                      </button>
                     </div>
-                    <div className="flex gap-2 mt-0.5">
-                      <span className="text-[10px] text-blue-600 font-bold">{u.role.replace('_', ' ')}</span>
-                      {u.department_name && (
-                        <span className="text-[10px] text-slate-400">· {u.department_name}</span>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleToggleActive(u.id, u.is_active)}
-                    className={`px-2 py-1 text-[10px] font-bold rounded ${
-                      u.is_active
-                        ? 'bg-red-50 text-red-600 border border-red-200'
-                        : 'bg-green-50 text-green-600 border border-green-200'
-                    }`}>
-                    {u.is_active ? 'DEACTIVATE' : 'ACTIVATE'}
-                  </button>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>

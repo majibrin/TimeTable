@@ -119,8 +119,6 @@ export default function OfficerDashboard() {
     }
   };
 
-  // ... rest of handlers (unchanged) ...
-
   const toggleCohort = (id) => {
     setCourseForm(f => ({
       ...f,
@@ -391,7 +389,7 @@ export default function OfficerDashboard() {
         </div>
       </div>
 
-      {/* Row 2: Action Buttons – horizontal scroll on mobile, wrap on desktop */}
+      {/* Row 2: Action Buttons */}
       <div className="bg-white border-b border-slate-200 px-4 py-2">
         <div className="max-w-7xl mx-auto flex flex-nowrap sm:flex-wrap items-center gap-1 sm:gap-2 overflow-x-auto">
           <button onClick={handleGenerate} disabled={generating}
@@ -409,7 +407,7 @@ export default function OfficerDashboard() {
         </div>
       </div>
 
-      {/* Row 3: Tabs – hidden on mobile (hamburger only), visible on desktop */}
+      {/* Row 3: Tabs */}
       <div className="border-b border-slate-200 bg-white px-4">
         <div className="max-w-7xl mx-auto py-1">
           {/* Hamburger (mobile only) */}
@@ -425,7 +423,7 @@ export default function OfficerDashboard() {
             </span>
           </div>
 
-          {/* Tabs list – hidden on mobile unless open, flex on desktop */}
+          {/* Tabs list */}
           <div className={`${mobileMenuOpen ? 'block' : 'hidden'} md:flex flex-nowrap items-center gap-1 overflow-x-auto`}>
             {TABS.map(t => (
               <button key={t} onClick={() => { setTab(t); setMobileMenuOpen(false); }}
@@ -450,13 +448,14 @@ export default function OfficerDashboard() {
             : <div className="overflow-x-auto"><TimetableGrid schedules={schedules} /></div>
         )}
 
-        {/* ... rest of tabs (COURSES, VENUES, etc.) unchanged ... */}
+        {/* COURSES - Form Left, List Right */}
         {tab === 'COURSES' && (
-          <div>
-            <div className="bg-white border border-slate-200 rounded-lg p-4 md:p-6 mb-4 shadow-sm">
-              <h2 className="text-xs font-bold text-slate-700 mb-3 uppercase">Add Course</h2>
-              <form onSubmit={handleCreateCourse} className="space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+            {/* Form Column - Left */}
+            <div className="lg:col-span-2">
+              <div className="bg-white border border-slate-200 rounded-lg p-4 md:p-6 shadow-sm sticky top-[200px]">
+                <h2 className="text-xs font-bold text-slate-700 mb-3 uppercase">Add Course</h2>
+                <form onSubmit={handleCreateCourse} className="space-y-3">
                   <div>
                     <label className="block text-xs text-slate-500 mb-1">CODE</label>
                     <input value={courseForm.code} onChange={e => setCourseForm({...courseForm, code: e.target.value})} required
@@ -482,11 +481,11 @@ export default function OfficerDashboard() {
                       {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                     </select>
                   </div>
-                  <div className="lg:col-span-2">
+                  <div>
                     <label className="block text-xs text-slate-500 mb-2">
                       COHORTS ({courseForm.selectedCohorts.length} selected)
                     </label>
-                    <div className="border border-slate-200 rounded p-2 max-h-40 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1">
+                    <div className="border border-slate-200 rounded p-2 max-h-40 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-1">
                       {cohorts.map(c => (
                         <label key={c.id} className="flex items-center gap-1.5 cursor-pointer hover:bg-slate-50 p-1 rounded">
                           <input
@@ -508,147 +507,150 @@ export default function OfficerDashboard() {
                       <span className="text-xs text-slate-700">Has practical/lab</span>
                     </label>
                   </div>
+                  <button type="submit" className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition-colors">
+                    ADD COURSE
+                  </button>
+                </form>
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <label className="block text-xs text-slate-500 mb-1">
+                    BULK IMPORT CSV (code, title, unit, department, cohorts)
+                  </label>
+                  <input type="file" accept=".csv" onChange={e => handleImportCSV(e, 'import/courses/')}
+                    className="text-xs text-slate-600 w-full sm:w-auto file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 file:text-blue-700 file:hover:bg-blue-100 cursor-pointer" />
                 </div>
-
-                <button type="submit" className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition-colors">
-                  ADD COURSE
-                </button>
-              </form>
-
-              <div className="mt-3 pt-3 border-t border-slate-100">
-                <label className="block text-xs text-slate-500 mb-1">
-                  BULK IMPORT CSV (code, title, unit, department, cohorts)
-                  <span className="text-slate-400 ml-1">— cohorts column: semicolon-separated levels e.g. 100L;200L</span>
-                </label>
-                <input type="file" accept=".csv" onChange={e => handleImportCSV(e, 'import/courses/')}
-                  className="text-xs text-slate-600 w-full sm:w-auto" />
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-lg shadow-sm">
-              <div className="p-3 border-b border-slate-100 text-xs font-bold text-slate-700">COURSES ({courses.length})</div>
-              <div className="divide-y divide-slate-100 max-h-[32rem] overflow-y-auto">
-                {courses.map(c => (
-                  <div key={c.id} className="p-3 md:p-4">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
-                      <div>
-                        <div className="text-xs font-bold text-slate-800">{c.code}</div>
-                        <div className="text-[10px] sm:text-xs text-slate-500">{c.title} · {c.unit}u{c.has_practical ? ' · Practical' : ''}</div>
-                        <div className="text-[10px] sm:text-xs text-blue-500">
-                          {c.cohorts_detail?.map(cd => cd.label).join(', ') || 'No cohorts'}
+            {/* List Column - Right */}
+            <div className="lg:col-span-3">
+              <div className="bg-white border border-slate-200 rounded-lg shadow-sm">
+                <div className="p-3 border-b border-slate-100 text-xs font-bold text-slate-700">COURSES ({courses.length})</div>
+                <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
+                  {courses.map(c => (
+                    <div key={c.id} className="p-3 md:p-4">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+                        <div>
+                          <div className="text-xs font-bold text-slate-800">{c.code}</div>
+                          <div className="text-[10px] sm:text-xs text-slate-500">{c.title} · {c.unit}u{c.has_practical ? ' · Practical' : ''}</div>
+                          <div className="text-[10px] sm:text-xs text-blue-500">
+                            {c.cohorts_detail?.map(cd => cd.label).join(', ') || 'No cohorts'}
+                          </div>
+                          <div className="text-[10px] sm:text-xs text-purple-500">
+                            {c.student_groups_detail?.length > 0
+                              ? `Groups: ${c.student_groups_detail.map(g => g.label).join(', ')}`
+                              : 'No groups assigned'}
+                          </div>
                         </div>
-                        <div className="text-[10px] sm:text-xs text-purple-500">
-                          {c.student_groups_detail?.length > 0
-                            ? `Groups: ${c.student_groups_detail.map(g => g.label).join(', ')}`
-                            : 'No groups assigned'}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${STATUS_COLORS[c.status] || ''}`}>{c.status}</span>
+                          {c.status === 'APPROVED' && (
+                            <button onClick={() => openAssignPanel(c)}
+                              className="px-2 py-1 text-[10px] font-bold border border-slate-300 hover:bg-slate-50 text-slate-700 rounded transition-colors">
+                              {openAssign === c.id ? 'CLOSE' : 'GROUPS'}
+                            </button>
+                          )}
+                          <button onClick={() => handleDeleteCourse(c.id)}
+                            className="px-2 py-1 text-[10px] font-bold border border-red-300 hover:bg-red-50 text-red-600 rounded transition-colors">
+                            DEL
+                          </button>
                         </div>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${STATUS_COLORS[c.status] || ''}`}>{c.status}</span>
-                        {c.status === 'APPROVED' && (
-                          <button onClick={() => openAssignPanel(c)}
-                            className="px-2 py-1 text-[10px] font-bold border border-slate-300 hover:bg-slate-50 text-slate-700 rounded transition-colors">
-                            {openAssign === c.id ? 'CLOSE' : 'GROUPS'}
+
+                      {openAssign === c.id && (
+                        <div className="mt-2 p-2 bg-slate-50 rounded border border-slate-200">
+                          <div className="text-[10px] font-bold text-slate-600 mb-1">ASSIGN GROUPS TO THIS COURSE</div>
+                          {groups.length === 0 ? (
+                            <div className="text-[10px] text-slate-400">No groups defined yet — create some in the GROUPS tab first</div>
+                          ) : (
+                            <div className="grid grid-cols-1 gap-1 max-h-32 overflow-y-auto">
+                              {groups.map(g => (
+                                <label key={g.id} className="flex items-center gap-1.5 cursor-pointer">
+                                  <input type="checkbox"
+                                    checked={(assignSelections[c.id] || []).includes(g.id)}
+                                    onChange={() => toggleAssignGroup(c.id, g.id)}
+                                    className="w-3 h-3" />
+                                  <span className="text-[10px] sm:text-xs text-slate-700">
+                                    {g.level} · {SCHEMES.find(s => s.value === g.scheme)?.label || g.scheme} · {g.name}
+                                    {' — '}{g.departments_detail?.map(d => d.name).join(', ')}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                          <button onClick={() => handleSaveGroupAssignment(c.id)}
+                            className="mt-2 px-3 py-1 text-[10px] font-bold bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors">
+                            SAVE
                           </button>
-                        )}
-                        <button onClick={() => handleDeleteCourse(c.id)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* VENUES - Form Left, List Right */}
+        {tab === 'VENUES' && (
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+            <div className="lg:col-span-2">
+              <div className="bg-white border border-slate-200 rounded-lg p-4 md:p-6 shadow-sm sticky top-[200px]">
+                <h2 className="text-xs font-bold text-slate-700 mb-3 uppercase">Add Venue</h2>
+                <form onSubmit={handleCreateVenue} className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">NAME</label>
+                    <input value={venueForm.name} onChange={e => setVenueForm({...venueForm, name: e.target.value})} required
+                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">CAPACITY</label>
+                    <input type="number" value={venueForm.capacity} onChange={e => setVenueForm({...venueForm, capacity: e.target.value})} required
+                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                  <button type="submit" className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition-colors">
+                    ADD VENUE
+                  </button>
+                </form>
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <label className="block text-xs text-slate-500 mb-1">BULK IMPORT CSV (name, capacity)</label>
+                  <input type="file" accept=".csv" onChange={e => handleImportCSV(e, 'import/venues/')}
+                    className="text-xs text-slate-600 w-full sm:w-auto file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 file:text-blue-700 file:hover:bg-blue-100 cursor-pointer" />
+                </div>
+              </div>
+            </div>
+            <div className="lg:col-span-3">
+              <div className="bg-white border border-slate-200 rounded-lg shadow-sm">
+                <div className="p-3 border-b border-slate-100 text-xs font-bold text-slate-700">VENUES ({venues.length})</div>
+                <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
+                  {venues.map(v => (
+                    <div key={v.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 md:p-4 gap-2">
+                      <div>
+                        <div className="text-xs font-bold text-slate-800">{v.name}</div>
+                        <div className="text-[10px] sm:text-xs text-slate-500">Capacity: {v.capacity}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${STATUS_COLORS[v.status] || ''}`}>{v.status}</span>
+                        <button onClick={() => handleDeleteVenue(v.id)}
                           className="px-2 py-1 text-[10px] font-bold border border-red-300 hover:bg-red-50 text-red-600 rounded transition-colors">
                           DEL
                         </button>
                       </div>
                     </div>
-
-                    {openAssign === c.id && (
-                      <div className="mt-2 p-2 bg-slate-50 rounded border border-slate-200">
-                        <div className="text-[10px] font-bold text-slate-600 mb-1">ASSIGN GROUPS TO THIS COURSE</div>
-                        {groups.length === 0 ? (
-                          <div className="text-[10px] text-slate-400">No groups defined yet — create some in the GROUPS tab first</div>
-                        ) : (
-                          <div className="grid grid-cols-1 gap-1 max-h-32 overflow-y-auto">
-                            {groups.map(g => (
-                              <label key={g.id} className="flex items-center gap-1.5 cursor-pointer">
-                                <input type="checkbox"
-                                  checked={(assignSelections[c.id] || []).includes(g.id)}
-                                  onChange={() => toggleAssignGroup(c.id, g.id)}
-                                  className="w-3 h-3" />
-                                <span className="text-[10px] sm:text-xs text-slate-700">
-                                  {g.level} · {SCHEMES.find(s => s.value === g.scheme)?.label || g.scheme} · {g.name}
-                                  {' — '}{g.departments_detail?.map(d => d.name).join(', ')}
-                                </span>
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                        <button onClick={() => handleSaveGroupAssignment(c.id)}
-                          className="mt-2 px-3 py-1 text-[10px] font-bold bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors">
-                          SAVE
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
           </div>
         )}
 
-        {tab === 'VENUES' && (
-          <div>
-            <div className="bg-white border border-slate-200 rounded-lg p-4 md:p-6 mb-4 shadow-sm">
-              <h2 className="text-xs font-bold text-slate-700 mb-3 uppercase">Add Venue</h2>
-              <form onSubmit={handleCreateVenue} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">NAME</label>
-                  <input value={venueForm.name} onChange={e => setVenueForm({...venueForm, name: e.target.value})} required
-                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">CAPACITY</label>
-                  <input type="number" value={venueForm.capacity} onChange={e => setVenueForm({...venueForm, capacity: e.target.value})} required
-                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" />
-                </div>
-                <div className="col-span-1 sm:col-span-2">
-                  <button type="submit" className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition-colors">
-                    ADD VENUE
-                  </button>
-                </div>
-              </form>
-              <div className="mt-3 pt-3 border-t border-slate-100">
-                <label className="block text-xs text-slate-500 mb-1">BULK IMPORT CSV (name, capacity)</label>
-                <input type="file" accept=".csv" onChange={e => handleImportCSV(e, 'import/venues/')}
-                  className="text-xs text-slate-600 w-full sm:w-auto" />
-              </div>
-            </div>
-            <div className="bg-white border border-slate-200 rounded-lg shadow-sm">
-              <div className="p-3 border-b border-slate-100 text-xs font-bold text-slate-700">VENUES ({venues.length})</div>
-              <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
-                {venues.map(v => (
-                  <div key={v.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 md:p-4 gap-2">
-                    <div>
-                      <div className="text-xs font-bold text-slate-800">{v.name}</div>
-                      <div className="text-[10px] sm:text-xs text-slate-500">Capacity: {v.capacity}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${STATUS_COLORS[v.status] || ''}`}>{v.status}</span>
-                      <button onClick={() => handleDeleteVenue(v.id)}
-                        className="px-2 py-1 text-[10px] font-bold border border-red-300 hover:bg-red-50 text-red-600 rounded transition-colors">
-                        DEL
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-
-                {tab === 'GROUPS' && (
-          <div>
-            <div className="bg-white border border-slate-200 rounded-lg p-4 md:p-6 mb-4 shadow-sm">
-              <h2 className="text-xs font-bold text-slate-700 mb-3 uppercase">Create Group</h2>
-              <form onSubmit={handleCreateGroup} className="space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {/* GROUPS - Form Left, List Right */}
+        {tab === 'GROUPS' && (
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+            <div className="lg:col-span-2">
+              <div className="bg-white border border-slate-200 rounded-lg p-4 md:p-6 shadow-sm sticky top-[200px]">
+                <h2 className="text-xs font-bold text-slate-700 mb-3 uppercase">Create Group</h2>
+                <form onSubmit={handleCreateGroup} className="space-y-3">
                   <div>
                     <label className="block text-xs text-slate-500 mb-1">LEVEL</label>
                     <select value={groupForm.level} onChange={e => setGroupForm({...groupForm, level: e.target.value})}
@@ -669,257 +671,265 @@ export default function OfficerDashboard() {
                       placeholder="A, B, 1, 2..." required
                       className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
-                </div>
-
-                {groupForm.scheme === 'COURSE_SPECIFIC' && (
+                  {groupForm.scheme === 'COURSE_SPECIFIC' && (
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">COURSE (required)</label>
+                      <select value={groupForm.course} onChange={e => setGroupForm({...groupForm, course: e.target.value})}
+                        className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400">
+                        <option value="">-- Select Course --</option>
+                        {courses.filter(c => c.status === 'APPROVED').map(c => (
+                          <option key={c.id} value={c.id}>{c.code} - {c.title}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div>
-                    <label className="block text-xs text-slate-500 mb-1">COURSE (required)</label>
-                    <select value={groupForm.course} onChange={e => setGroupForm({...groupForm, course: e.target.value})}
-                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400">
-                      <option value="">-- Select Course --</option>
-                      {courses.filter(c => c.status === 'APPROVED').map(c => (
-                        <option key={c.id} value={c.id}>{c.code} - {c.title}</option>
+                    <label className="block text-xs text-slate-500 mb-2">
+                      DEPARTMENTS IN THIS GROUP ({groupForm.selectedDepartments.length} selected)
+                    </label>
+                    <div className="border border-slate-200 rounded p-2 max-h-40 overflow-y-auto grid grid-cols-1 gap-1">
+                      {departments.map(d => (
+                        <label key={d.id} className="flex items-center gap-1.5 cursor-pointer hover:bg-slate-50 p-1 rounded">
+                          <input type="checkbox"
+                            checked={groupForm.selectedDepartments.includes(d.id)}
+                            onChange={() => toggleGroupDepartment(d.id)}
+                            className="w-3 h-3" />
+                          <span className="text-[10px] sm:text-xs text-slate-700">{d.name}</span>
+                        </label>
                       ))}
-                    </select>
-                    {courses.filter(c => c.status === 'APPROVED').length === 0 && (
-                      <div className="text-[10px] text-amber-600 mt-1">No approved courses yet — approve a course first in PENDING REVIEW</div>
-                    )}
+                    </div>
                   </div>
-                )}
-
-                <div>
-                  <label className="block text-xs text-slate-500 mb-2">
-                    DEPARTMENTS IN THIS GROUP ({groupForm.selectedDepartments.length} selected)
+                  <button type="submit" className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition-colors">
+                    CREATE GROUP
+                  </button>
+                </form>
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <label className="block text-xs text-slate-500 mb-1 font-medium">
+                    BULK IMPORT GROUPS VIA CSV (scheme, name, level, course_code, departments)
                   </label>
-                  <div className="border border-slate-200 rounded p-2 max-h-40 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1">
-                    {departments.map(d => (
-                      <label key={d.id} className="flex items-center gap-1.5 cursor-pointer hover:bg-slate-50 p-1 rounded">
-                        <input type="checkbox"
-                          checked={groupForm.selectedDepartments.includes(d.id)}
-                          onChange={() => toggleGroupDepartment(d.id)}
-                          className="w-3 h-3" />
-                        <span className="text-[10px] sm:text-xs text-slate-700">{d.name}</span>
-                      </label>
+                  <input 
+                    type="file" 
+                    accept=".csv" 
+                    onChange={(e) => handleImportCSV(e, 'import/groups/')} 
+                    className="text-xs text-slate-600 w-full sm:w-auto mt-1 cursor-pointer file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 file:text-blue-700 file:hover:bg-blue-100" 
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="lg:col-span-3">
+              <div className="bg-white border border-slate-200 rounded-lg shadow-sm">
+                <div className="p-3 border-b border-slate-100 text-xs font-bold text-slate-700">DEFINED GROUPS ({groups.length})</div>
+                {groups.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-slate-400">No groups defined yet</div>
+                ) : (
+                  <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
+                    {groups.map(g => (
+                      <div key={g.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 md:p-4 gap-2">
+                        <div>
+                          <div className="text-xs font-bold text-slate-800">
+                            {g.level} — {SCHEMES.find(s => s.value === g.scheme)?.label || g.scheme} — {g.name}
+                          </div>
+                          <div className="text-[10px] sm:text-xs text-slate-500">
+                            {g.departments_detail?.map(d => d.name).join(', ') || 'No departments'}
+                          </div>
+                        </div>
+                        <button onClick={() => handleDeleteGroup(g.id)}
+                          className="px-2 py-1 text-[10px] font-bold border border-red-300 hover:bg-red-50 text-red-600 rounded transition-colors">
+                          DEL
+                        </button>
+                      </div>
                     ))}
                   </div>
-                </div>
-
-                <button type="submit" className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition-colors">
-                  CREATE GROUP
-                </button>
-              </form>
-
-              {/* ─── NEW BULK IMPORT BOX ─── */}
-              <div className="mt-3 pt-3 border-t border-slate-100">
-                <label className="block text-xs text-slate-500 mb-1 font-medium">
-                  BULK IMPORT GROUPS VIA CSV (scheme, name, level, course_code, departments)
-                </label>
-                <input 
-                  type="file" 
-                  accept=".csv" 
-                  onChange={(e) => handleImportCSV(e, 'import/groups/')} 
-                  className="text-xs text-slate-600 w-full sm:w-auto mt-1 cursor-pointer" 
-                />
-              </div>
-            </div>
-
-            <div className="bg-white border border-slate-200 rounded-lg shadow-sm">
-              <div className="p-3 border-b border-slate-100 text-xs font-bold text-slate-700">DEFINED GROUPS ({groups.length})</div>
-              {groups.length === 0 ? (
-                <div className="p-6 text-center text-xs text-slate-400">No groups defined yet</div>
-              ) : (
-                <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
-                  {groups.map(g => (
-                    <div key={g.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 md:p-4 gap-2">
-                      <div>
-                        <div className="text-xs font-bold text-slate-800">
-                          {g.level} — {SCHEMES.find(s => s.value === g.scheme)?.label || g.scheme} — {g.name}
-                        </div>
-                        <div className="text-[10px] sm:text-xs text-slate-500">
-                          {g.departments_detail?.map(d => d.name).join(', ') || 'No departments'}
-                        </div>
-                      </div>
-                      <button onClick={() => handleDeleteGroup(g.id)}
-                        className="px-2 py-1 text-[10px] font-bold border border-red-300 hover:bg-red-50 text-red-600 rounded transition-colors">
-                        DEL
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-                {tab === 'DEPARTMENTS' && (
-          <div className="space-y-4">
-            {/* 1. Add Faculty Section Card */}
-            <div className="bg-white border border-slate-200 rounded-lg p-4 md:p-6 shadow-sm">
-              <h2 className="text-xs font-bold text-slate-700 mb-3 uppercase">Add Faculty</h2>
-              <form onSubmit={handleCreateFaculty} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">NAME</label>
-                  <input 
-                    value={facultyForm.name} 
-                    onChange={e => setFacultyForm({...facultyForm, name: e.target.value})} 
-                    required
-                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" 
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">CODE</label>
-                  <input 
-                    value={facultyForm.code} 
-                    onChange={e => setFacultyForm({...facultyForm, code: e.target.value})} 
-                    required
-                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" 
-                  />
-                </div>
-                <div className="col-span-1 sm:col-span-2">
-                  <button type="submit" className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition-colors">
-                    ADD FACULTY
-                  </button>
-                </div>
-              </form>
-
-              {/* Bulk Import Faculties CSV Box Element */}
-              <div className="mt-3 pt-3 border-t border-slate-100">
-                <label className="block text-xs text-slate-500 mb-1 font-medium">
-                  BULK IMPORT FACULTIES CSV (name, code)
-                </label>
-                <input 
-                  type="file" 
-                  accept=".csv" 
-                  onChange={(e) => handleImportCSV(e, 'import/faculties/')} 
-                  className="text-xs text-slate-600 w-full sm:w-auto mt-1 cursor-pointer" 
-                />
-              </div>
-
-              <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
-                {faculties.length} faculties loaded
-                {faculties.length > 0 && (
-                  <div className="mt-1 text-slate-400">{faculties.map(f => `${f.name} (${f.code})`).join(', ')}</div>
                 )}
               </div>
             </div>
+          </div>
+        )}
 
-            {/* 2. Add Department Section Card */}
-            <div className="bg-white border border-slate-200 rounded-lg p-4 md:p-6 shadow-sm">
-              <h2 className="text-xs font-bold text-slate-700 mb-3 uppercase">Add Department</h2>
-              <form onSubmit={handleCreateDepartment} className="space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">NAME</label>
+        {/* DEPARTMENTS - Form Left, List Right */}
+        {tab === 'DEPARTMENTS' && (
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+            {/* Left Column - Fixed Faculty + Scrollable Forms */}
+            <div className="lg:col-span-2">
+              <div className="sticky top-[200px] space-y-4 max-h-[calc(100vh-240px)] overflow-y-auto pr-1">
+                {/* Faculty Form - Fixed at top */}
+                <div className="bg-white border border-slate-200 rounded-lg p-4 md:p-6 shadow-sm flex-shrink-0">
+                  <h2 className="text-xs font-bold text-slate-700 mb-3 uppercase">Add Faculty</h2>
+                  <form onSubmit={handleCreateFaculty} className="space-y-3">
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">NAME</label>
+                      <input 
+                        value={facultyForm.name} 
+                        onChange={e => setFacultyForm({...facultyForm, name: e.target.value})} 
+                        required
+                        className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" 
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">CODE</label>
+                      <input 
+                        value={facultyForm.code} 
+                        onChange={e => setFacultyForm({...facultyForm, code: e.target.value})} 
+                        required
+                        className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" 
+                      />
+                    </div>
+                    <button type="submit" className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition-colors">
+                      ADD FACULTY
+                    </button>
+                  </form>
+                  <div className="mt-3 pt-3 border-t border-slate-100">
+                    <label className="block text-xs text-slate-500 mb-1 font-medium">
+                      BULK IMPORT FACULTIES CSV (name, code)
+                    </label>
                     <input 
-                      value={deptForm.name} 
-                      onChange={e => setDeptForm({...deptForm, name: e.target.value})} 
-                      required
-                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" 
+                      type="file" 
+                      accept=".csv" 
+                      onChange={(e) => handleImportCSV(e, 'import/faculties/')} 
+                      className="text-xs text-slate-600 w-full sm:w-auto mt-1 cursor-pointer file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 file:text-blue-700 file:hover:bg-blue-100" 
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">CODE</label>
+                  <div className="mt-2 pt-2 border-t border-slate-100 text-xs text-slate-500">
+                    {faculties.length} faculties loaded
+                  </div>
+                </div>
+
+                {/* Department Form - Scrollable */}
+                <div className="bg-white border border-slate-200 rounded-lg p-4 md:p-6 shadow-sm">
+                  <h2 className="text-xs font-bold text-slate-700 mb-3 uppercase">Add Department</h2>
+                  <form onSubmit={handleCreateDepartment} className="space-y-3">
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">NAME</label>
+                      <input 
+                        value={deptForm.name} 
+                        onChange={e => setDeptForm({...deptForm, name: e.target.value})} 
+                        required
+                        className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" 
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">CODE</label>
+                      <input 
+                        value={deptForm.code} 
+                        onChange={e => setDeptForm({...deptForm, code: e.target.value})} 
+                        required
+                        className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" 
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">FACULTY</label>
+                      <select 
+                        value={deptForm.faculty} 
+                        onChange={e => setDeptForm({...deptForm, faculty: e.target.value})} 
+                        required
+                        className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400"
+                      >
+                        <option value="">-- Select Faculty --</option>
+                        {faculties.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                      </select>
+                    </div>
+                    <button type="submit" className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition-colors">
+                      ADD DEPARTMENT
+                    </button>
+                  </form>
+                  <div className="mt-3 pt-3 border-t border-slate-100">
+                    <label className="block text-xs text-slate-500 mb-1 font-medium">BULK IMPORT DEPARTMENTS CSV (name, code, faculty)</label>
                     <input 
-                      value={deptForm.code} 
-                      onChange={e => setDeptForm({...deptForm, code: e.target.value})} 
-                      required
-                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" 
+                      type="file" 
+                      accept=".csv" 
+                      onChange={e => handleImportCSV(e, 'import/departments/')} 
+                      className="text-xs text-slate-600 w-full sm:w-auto mt-1 cursor-pointer file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 file:text-blue-700 file:hover:bg-blue-100" 
                     />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">FACULTY</label>
-                  <select 
-                    value={deptForm.faculty} 
-                    onChange={e => setDeptForm({...deptForm, faculty: e.target.value})} 
-                    required
-                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400"
-                  >
-                    <option value="">-- Select Faculty --</option>
-                    {faculties.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                  </select>
+
+                {/* Cohort Form - Scrollable */}
+                <div className="bg-white border border-slate-200 rounded-lg p-4 md:p-6 shadow-sm">
+                  <h2 className="text-xs font-bold text-slate-700 mb-3 uppercase">Add Cohort</h2>
+                  <form onSubmit={handleCreateCohort} className="space-y-3">
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">DEPARTMENT</label>
+                      <select 
+                        value={cohortForm.department} 
+                        onChange={e => setCohortForm({...cohortForm, department: e.target.value})} 
+                        required
+                        className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400"
+                      >
+                        <option value="">-- Select Department --</option>
+                        {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">LEVEL</label>
+                      <select 
+                        value={cohortForm.level} 
+                        onChange={e => setCohortForm({...cohortForm, level: e.target.value})}
+                        className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400"
+                      >
+                        {LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-500 mb-1">STUDENT COUNT</label>
+                      <input 
+                        type="number" 
+                        value={cohortForm.studentCount} 
+                        onChange={e => setCohortForm({...cohortForm, studentCount: e.target.value})}
+                        placeholder="e.g. 80"
+                        className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" 
+                      />
+                    </div>
+                    <button type="submit" className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition-colors">
+                      ADD COHORT
+                    </button>
+                  </form>
+                  <div className="mt-3 pt-3 border-t border-slate-100">
+                    <label className="block text-xs text-slate-500 mb-1 font-medium">BULK IMPORT COHORTS CSV (department, level, student_count)</label>
+                    <input 
+                      type="file" 
+                      accept=".csv" 
+                      onChange={e => handleImportCSV(e, 'import/cohorts/')} 
+                      className="text-xs text-slate-600 w-full sm:w-auto mt-1 cursor-pointer file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 file:text-blue-700 file:hover:bg-blue-100" 
+                    />
+                  </div>
                 </div>
-                <button type="submit" className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition-colors">
-                  ADD DEPARTMENT
-                </button>
-              </form>
-              <div className="mt-3 pt-3 border-t border-slate-100">
-                <label className="block text-xs text-slate-500 mb-1 font-medium">BULK IMPORT DEPARTMENTS CSV (name, code, faculty)</label>
-                <input 
-                  type="file" 
-                  accept=".csv" 
-                  onChange={e => handleImportCSV(e, 'import/departments/')} 
-                  className="text-xs text-slate-600 w-full sm:w-auto mt-1 cursor-pointer" 
-                />
-                <div className="mt-2 text-xs text-slate-500">{departments.length} departments loaded</div>
               </div>
             </div>
 
-            {/* 3. Add Cohort Section Card */}
-            <div className="bg-white border border-slate-200 rounded-lg p-4 md:p-6 shadow-sm">
-              <h2 className="text-xs font-bold text-slate-700 mb-3 uppercase">Add Cohort</h2>
-              <form onSubmit={handleCreateCohort} className="space-y-3">
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">DEPARTMENT</label>
-                  <select 
-                    value={cohortForm.department} 
-                    onChange={e => setCohortForm({...cohortForm, department: e.target.value})} 
-                    required
-                    className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400"
-                  >
-                    <option value="">-- Select Department --</option>
-                    {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                  </select>
+            {/* Right Column - Department List */}
+            <div className="lg:col-span-3">
+              <div className="bg-white border border-slate-200 rounded-lg shadow-sm">
+                <div className="p-3 border-b border-slate-100 text-xs font-bold text-slate-700">DEPARTMENTS ({departments.length})</div>
+                <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
+                  {departments.map(d => (
+                    <div key={d.id} className="p-3 md:p-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <div className="text-xs font-bold text-slate-800">{d.name}</div>
+                          <div className="text-[10px] sm:text-xs text-slate-500">{d.code} · Faculty: {d.faculty_name || 'N/A'}</div>
+                        </div>
+                        <div className="text-xs text-slate-400">DEPT</div>
+                      </div>
+                    </div>
+                  ))}
+                  {departments.length === 0 && (
+                    <div className="p-6 text-center text-xs text-slate-400">No departments defined yet</div>
+                  )}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">LEVEL</label>
-                    <select 
-                      value={cohortForm.level} 
-                      onChange={e => setCohortForm({...cohortForm, level: e.target.value})}
-                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400"
-                    >
-                      {LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">STUDENT COUNT</label>
-                    <input 
-                      type="number" 
-                      value={cohortForm.studentCount} 
-                      onChange={e => setCohortForm({...cohortForm, studentCount: e.target.value})}
-                      placeholder="e.g. 80"
-                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-slate-400" 
-                    />
-                  </div>
-                </div>
-                <button type="submit" className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition-colors">
-                  ADD COHORT
-                </button>
-              </form>
-              <div className="mt-3 pt-3 border-t border-slate-100">
-                <label className="block text-xs text-slate-500 mb-1 font-medium">BULK IMPORT COHORTS CSV (department, level, student_count)</label>
-                <input 
-                  type="file" 
-                  accept=".csv" 
-                  onChange={e => handleImportCSV(e, 'import/cohorts/')} 
-                  className="text-xs text-slate-600 w-full sm:w-auto mt-1 cursor-pointer" 
-                />
-                <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">{cohorts.length} cohorts loaded</div>
               </div>
             </div>
           </div>
         )}
 
-
+        {/* PENDING REVIEW - Two column layout */}
         {tab === 'PENDING REVIEW' && (
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="bg-white border border-slate-200 rounded-lg shadow-sm">
               <div className="p-3 border-b border-slate-100 text-xs font-bold text-slate-700">PENDING COURSES ({pendingCourses.length})</div>
               {pendingCourses.length === 0 ? (
                 <div className="p-6 text-center text-xs text-slate-400">Nothing pending</div>
               ) : (
-                <div className="divide-y divide-slate-100">
+                <div className="divide-y divide-slate-100 max-h-[400px] overflow-y-auto">
                   {pendingCourses.map(c => (
                     <div key={c.id} className="p-3 md:p-4">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
@@ -949,7 +959,7 @@ export default function OfficerDashboard() {
               {pendingVenues.length === 0 ? (
                 <div className="p-6 text-center text-xs text-slate-400">Nothing pending</div>
               ) : (
-                <div className="divide-y divide-slate-100">
+                <div className="divide-y divide-slate-100 max-h-[400px] overflow-y-auto">
                   {pendingVenues.map(v => (
                     <div key={v.id} className="p-3 md:p-4">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">

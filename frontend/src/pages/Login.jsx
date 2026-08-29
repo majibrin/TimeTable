@@ -64,7 +64,7 @@ export default function Login() {
           <button 
             type="submit" 
             disabled={submitting}
-            className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white rounded font-bold tracking-widest text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold tracking-widest text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? 'AUTHENTICATING...' : 'ENTER SYSTEM'}
           </button>
