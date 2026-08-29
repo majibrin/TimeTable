@@ -599,17 +599,17 @@ def import_venues_csv(request):
     file = request.FILES.get('file')
     if not file:
         return JsonResponse({"error": "No file uploaded"}, status=400)
-    
+
     decoded = file.read().decode('utf-8')
     reader = csv.DictReader(io.StringIO(decoded))
-    
+
     # Lowercase headers to tolerate alternative capitalization patterns
     if reader.fieldnames:
         reader.fieldnames = [f.strip().lower() for f in reader.fieldnames]
-        
+
     created = 0
     errors = []
-    
+
     for i, row in enumerate(reader, start=2):
         try:
             venue_name = row.get('name', '').strip()
@@ -620,14 +620,14 @@ def import_venues_csv(request):
             # Dynamic Foreign Key Database Lookups
             faculty_obj = Faculty.objects.filter(code__iexact=faculty_raw).first() or \
                           Faculty.objects.filter(name__iexact=faculty_raw).first()
-                          
+
             dept_obj = Department.objects.filter(code__iexact=dept_raw).first() or \
                        Department.objects.filter(name__iexact=dept_raw).first()
 
             if faculty_raw and not faculty_obj:
                 errors.append(f"Row {i}: Faculty reference '{faculty_raw}' not found in database.")
                 continue
-                
+
             if dept_raw and not dept_obj:
                 errors.append(f"Row {i}: Department reference '{dept_raw}' not found in database.")
                 continue
@@ -645,7 +645,7 @@ def import_venues_csv(request):
             created += 1
         except Exception as e:
             errors.append(f"Row {i}: {str(e)}")
-            
+
     return JsonResponse({"created_or_updated": created, "errors": errors})
 
 
@@ -698,24 +698,45 @@ def generate_timetable_trigger(request):
     sessions_to_optimize = []
 
     for course in courses:
+        # 1. Dynamically extract the true level string (e.g., '100L', '400L')
+        first_cohort = course.cohorts.first()
+        course_level = first_cohort.level if first_cohort else '100L'
+        
+        # 2. Gather all department IDs offering this course (needed for 200L checks)
+        offering_dept_ids = set()
+        if course.department_id:
+            offering_dept_ids.add(course.department_id)
+
         groups = list(course.student_groups.all())
 
         if groups:
             for group in groups:
+                grp_level = group.level if group.level else course_level
+                
+                # Append departments attached to this specialized group container
+                for d in group.departments.all():
+                    offering_dept_ids.add(d.id)
+                    
                 if course.unit == 3:
                     sessions_to_optimize.append({
                         'course_id': course.id, 'group_kind': 'GROUP',
-                        'cohort_ids': [group.id], 'duration': 2
+                        'cohort_ids': [group.id], 'duration': 2,
+                        'level': grp_level, 'course_dept_id': course.department_id,
+                        'offering_dept_ids': list(offering_dept_ids)
                     })
                     sessions_to_optimize.append({
                         'course_id': course.id, 'group_kind': 'GROUP',
-                        'cohort_ids': [group.id], 'duration': 1
+                        'cohort_ids': [group.id], 'duration': 1,
+                        'level': grp_level, 'course_dept_id': course.department_id,
+                        'offering_dept_ids': list(offering_dept_ids)
                     })
                 else:
                     sessions_to_optimize.append({
                         'course_id': course.id, 'group_kind': 'GROUP',
                         'cohort_ids': [group.id],
-                        'duration': course.unit if course.unit > 0 else 1
+                        'duration': course.unit if course.unit > 0 else 1,
+                        'level': grp_level, 'course_dept_id': course.department_id,
+                        'offering_dept_ids': list(offering_dept_ids)
                     })
             continue
 
@@ -726,17 +747,23 @@ def generate_timetable_trigger(request):
         if course.unit == 3:
             sessions_to_optimize.append({
                 'course_id': course.id, 'group_kind': 'COHORT',
-                'cohort_ids': cohort_ids, 'duration': 2
+                'cohort_ids': cohort_ids, 'duration': 2,
+                'level': course_level, 'course_dept_id': course.department_id,
+                'offering_dept_ids': list(offering_dept_ids)
             })
             sessions_to_optimize.append({
                 'course_id': course.id, 'group_kind': 'COHORT',
-                'cohort_ids': cohort_ids, 'duration': 1
+                'cohort_ids': cohort_ids, 'duration': 1,
+                'level': course_level, 'course_dept_id': course.department_id,
+                'offering_dept_ids': list(offering_dept_ids)
             })
         else:
             sessions_to_optimize.append({
                 'course_id': course.id, 'group_kind': 'COHORT',
                 'cohort_ids': cohort_ids,
-                'duration': course.unit if course.unit > 0 else 1
+                'duration': course.unit if course.unit > 0 else 1,
+                'level': course_level, 'course_dept_id': course.department_id,
+                'offering_dept_ids': list(offering_dept_ids)
             })
 
     if not sessions_to_optimize:
@@ -884,7 +911,7 @@ def import_student_groups_csv(request):
     user, err = require_roles(request, ['SUPER_ADMIN', 'TIMETABLE_OFFICER'])
     if err:
         return err
-        
+
     file = request.FILES.get('file')
     if not file:
         return JsonResponse({"error": "No file uploaded"}, status=400)
@@ -892,7 +919,7 @@ def import_student_groups_csv(request):
     try:
         decoded = file.read().decode('utf-8')
         reader = csv.DictReader(io.StringIO(decoded))
-        
+
         # Standardize headers to lowercase to match lookups safely
         if reader.fieldnames:
             reader.fieldnames = [f.strip().lower() for f in reader.fieldnames]
@@ -950,7 +977,7 @@ def import_student_groups_csv(request):
                     student_group = course_obj.student_groups.filter(
                         level=level_str, scheme=scheme_val, name=group_name
                     ).first()
-                    
+
                     if not student_group:
                         student_group = StudentGroup.objects.create(
                             level=level_str, scheme=scheme_val, name=group_name
@@ -985,7 +1012,7 @@ def import_faculties_csv(request):
     user, err = require_roles(request, ['SUPER_ADMIN', 'TIMETABLE_OFFICER'])
     if err:
         return err
-        
+
     file = request.FILES.get('file')
     if not file:
         return JsonResponse({"error": "No file uploaded"}, status=400)
@@ -993,7 +1020,7 @@ def import_faculties_csv(request):
     try:
         decoded = file.read().decode('utf-8')
         reader = csv.DictReader(io.StringIO(decoded))
-        
+
         if reader.fieldnames:
             reader.fieldnames = [f.strip().lower() for f in reader.fieldnames]
 
