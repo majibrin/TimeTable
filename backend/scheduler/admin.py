@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import User, Faculty, Venue, Department, Course, SessionSlot, LevelCohort
+from .models import User, Faculty, Venue, Department, Course, SessionSlot, LevelCohort, StudentGroup
 # Register your models here.
 
 
@@ -10,3 +10,4 @@ admin.site.register(Department)
 admin.site.register(Course)
 admin.site.register(SessionSlot)
 admin.site.register(LevelCohort)
+admin.site.register(StudentGroup)
