@@ -4,6 +4,7 @@ import datetime
 import json
 import csv
 import io
+from django.db.models import Q  
 from django.db import transaction
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -446,30 +447,55 @@ def review_venue(request, pk):
 
 # ─── Session Slots ───────────────────────────────────────────────────────────
 
+
+
 class SessionSlotListCreateView(generics.ListCreateAPIView):
     serializer_class = SessionSlotSerializer
     permission_classes = [AllowAny]
 
     def get_queryset(self):
+        # Muna farawa da ciro duka session slots tare da hada dangantakarsu (select_related)
         qs = SessionSlot.objects.select_related(
             'course__department', 'venue', 'cohort', 'student_group'
         ).all()
-        level = self.request.query_params.get('level')
+        
+        # Karban matattace (filters) na yau da kullum daga URL parameters
         day = self.request.query_params.get('day')
-        department = self.request.query_params.get('department')
-        cohort = self.request.query_params.get('cohort')
         published = self.request.query_params.get('published')
-        if level:
-            qs = qs.filter(cohort__level=level)
+        
+        # Karban bayanan dalibi na musamman don wannan sabon logic din
+        student_dept = self.request.query_params.get('student_department')  # ID na sashen dalibi
+        level = self.request.query_params.get('level')                      # Misali: '100L'
+        
+        # Tace bayanan idan dalibi ya bincika ta amfani da sashensa da matakinsa
+        if student_dept and level:
+            qs = qs.filter(
+                # Hanya ta 1: Idan kwas din yana amfani da Group, kuma sashen dalibin yana ciki
+                Q(student_group__departments__id=student_dept, student_group__level=level) |
+                
+                # Hanya ta 2: Idan kwas din bashi da Group (asalin Cohort daya ne tilas)
+                Q(cohort__department_id=student_dept, cohort__level=level, student_group__isnull=True)
+            )
+        else:
+            # Idan ba a bada takamaiman bayanan dalibi ba, tsarin zai yi amfani da tsofaffin matattacen
+            department = self.request.query_params.get('department')
+            cohort = self.request.query_params.get('cohort')
+            current_level = self.request.query_params.get('level')
+            
+            if current_level:
+                qs = qs.filter(cohort__level=current_level)
+            if department:
+                qs = qs.filter(cohort__department_id=department)
+            if cohort:
+                qs = qs.filter(cohort_id=cohort)
+
+        # Matattacen gama-gari (Global filters)
         if day:
             qs = qs.filter(day__iexact=day)
-        if department:
-            qs = qs.filter(cohort__department_id=department)
-        if cohort:
-            qs = qs.filter(cohort_id=cohort)
         if published == 'true':
             qs = qs.filter(is_published=True)
-        return qs
+            
+        return qs.distinct()  # .distinct() yana hana maimaituwar layuka idan aka yi amfani da ManyToMany
 
 
 # ─── Academic Session & Semester ─────────────────────────────────────────────
