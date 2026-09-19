@@ -75,17 +75,27 @@ class TimetableEngine:
 
         return best_state, best_energy
 
+    def _allowed_time_slots(self, duration):
+        base_slots = [0, 1, 2, 3, 4, 6, 7, 8, 9]
+        if duration == 2:
+            return [0, 1, 2, 3, 4, 6, 7, 8]
+        if duration == 1:
+            return base_slots
+        return base_slots
+
     def _generate_initial_state(self, sessions_data, venue_ids):
         state = []
         for s in sessions_data:
+            duration = int(s.get('duration', 1) or 1)
+            session_time = random.choice(self._allowed_time_slots(duration))
             state.append({
                 'course_id': s['course_id'],
                 'group_kind': s.get('group_kind', 'COHORT'),
                 'cohort_ids': s['cohort_ids'],
                 'venue_id': random.choice(venue_ids) if venue_ids else None,
                 'day_index': random.randint(0, 5),
-                'time_slot_index': random.choice([0,1,2,3,4,6,7,8,9]),
-                'duration': s['duration']
+                'time_slot_index': session_time,
+                'duration': duration
             })
         return state
 
@@ -98,8 +108,7 @@ class TimetableEngine:
 
         if operation == 'TIME':
             session['day_index'] = random.randint(0, 5)
-            valid_slots = [0,1,2,3,4,6,7,8] if session['duration'] == 2 else [0,1,2,3,4,6,7,8,9]
-            session['time_slot_index'] = random.choice(valid_slots)
+            session['time_slot_index'] = random.choice(self._allowed_time_slots(int(session.get('duration', 1) or 1)))
         elif operation == 'VENUE' and venue_ids:
             session['venue_id'] = random.choice(venue_ids)
 

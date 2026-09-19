@@ -2,6 +2,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import API from '../api/client';
 import TimetableGrid from '../components/TimetableGrid';
 import { exportTimetablePdf } from '../utils/exportPdf';
+import { useAuth } from '../context/AuthContext';
+
+const LEVELS = ['100L', '200L', '300L', '400L'];
+
+function slotLevel(slot) {
+  return (slot.student_group_detail || slot.cohort_detail || '').match(/\b\d{3}L\b/)?.[0] || '';
+}
 
 const DAYS_ORDER = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const DAY_MAP = { 0: 'SUN', 1: 'MON', 2: 'TUE', 3: 'WED', 4: 'THU', 5: 'FRI', 6: 'SAT' };
@@ -64,30 +71,23 @@ function Countdown({ minutesUntil }) {
 }
 
 export default function StudentDashboard() {
+  const { user } = useAuth();
   const [schedules, setSchedules] = useState([]);
-  const [cohorts, setCohorts] = useState([]);
-  const [selectedCohort, setSelectedCohort] = useState('');
+  const [selectedLevel, setSelectedLevel] = useState('100L');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [nextSession, setNextSession] = useState(null);
 
-  const fetchCohorts = async () => {
-    try {
-      const res = await API.get('cohorts/');
-      setCohorts(res.data);
-    } catch (e) {
-      setError('Failed to load cohorts');
-    }
-  };
-
   const fetchTimetable = useCallback(async () => {
-    if (!selectedCohort) return;
+    if (!user?.department) return;
     setLoading(true);
     try {
-      const res = await API.get(`slots/?published=true&cohort=${selectedCohort}`);
+      const res = await API.get(`slots/?published=true&student_department=${user.department}&level=${selectedLevel}`);
       const normalized = res.data.map(slot => ({
         course_code: (slot.course_detail || '').split(' - ')[0],
         room: slot.venue_name || 'TBD',
+        student_group_detail: slot.student_group_detail,
+        level: slotLevel(slot),
         day: (slot.day || 'MON').toUpperCase().substring(0, 3),
         start_time: slot.start_time ? slot.start_time.substring(0, 5) : '08:00',
         duration: parseInt(slot.duration || 1, 10),
@@ -99,15 +99,16 @@ export default function StudentDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [selectedCohort]);
+  }, [selectedLevel, user?.department]);
 
-  useEffect(() => { fetchCohorts(); }, []);
   useEffect(() => { fetchTimetable(); }, [fetchTimetable]);
 
   const handleExport = () => {
     exportTimetablePdf(schedules, {
-      title: 'My Class Timetable',
-      subtitle: 'Student Schedule — Faculty of Science, GSU',
+      level: selectedLevel,
+      semester: 'FIRST',
+      title: `${selectedLevel} FIRST SEMESTER LECTURES TIME TABLE`,
+      subtitle: `${selectedLevel} — Faculty of Science, GSU`,
       filename: 'my-class-timetable'
     });
   };
@@ -140,18 +141,16 @@ export default function StudentDashboard() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 md:py-6">
         {error && <div className="bg-red-50 text-red-700 text-xs p-3 rounded-xl mb-4 border border-red-200">{error}</div>}
 
-        {/* Cohort Selector */}
+        {/* Level Selector */}
         <div className="bg-white border border-slate-200/60 rounded-2xl p-5 mb-6 shadow-sm">
-          <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-2">
-            Select Your Department & Level
-          </label>
-          <select value={selectedCohort} onChange={e => setSelectedCohort(e.target.value)}
-            className="w-full px-3 py-2.5 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 bg-slate-50/50 font-bold transition-all">
-            <option value="">-- Select Cohort --</option>
-            {cohorts.map(c => (
-              <option key={c.id} value={c.id}>{c.department_name} — {c.level}</option>
+          <div className="flex flex-wrap gap-2">
+            {LEVELS.map(level => (
+              <button key={level} onClick={() => setSelectedLevel(level)}
+                className={`px-4 py-2 text-[10px] font-bold rounded-lg border ${selectedLevel === level ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200'}`}>
+                {level}
+              </button>
             ))}
-          </select>
+          </div>
         </div>
 
         {/* Next Session Countdown */}
@@ -171,13 +170,13 @@ export default function StudentDashboard() {
         {/* Timetable */}
         {loading ? (
           <div className="text-center text-xs text-slate-400 py-12 bg-white rounded-2xl border border-slate-200/60 p-8">Loading timetable...</div>
-        ) : selectedCohort && schedules.length === 0 ? (
-          <div className="text-center text-xs text-slate-400 py-12 bg-white rounded-2xl border border-slate-200/60 p-8">No published timetable for this cohort yet</div>
-        ) : selectedCohort ? (
+        ) : schedules.length === 0 ? (
+          <div className="text-center text-xs text-slate-400 py-12 bg-white rounded-2xl border border-slate-200/60 p-8">No published timetable for this level yet</div>
+        ) : (
           <div className="bg-white rounded-2xl border border-slate-200/60 p-4 shadow-sm">
             <TimetableGrid schedules={schedules} />
           </div>
-        ) : null}
+        )}
       </div>
     </div>
   );

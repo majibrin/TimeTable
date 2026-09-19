@@ -9,6 +9,11 @@ const STATUS_COLORS = {
   APPROVED: 'bg-green-50 text-green-600',
   REJECTED: 'bg-red-50 text-red-600',
 };
+const LEVELS = ['100L', '200L', '300L', '400L'];
+
+function slotLevel(slot) {
+  return (slot.student_group_detail || slot.cohort_detail || '').match(/\b\d{3}L\b/)?.[0] || '';
+}
 
 export default function DepartmentDashboard() {
   const [tab, setTab] = useState('TIMETABLE');
@@ -17,6 +22,7 @@ export default function DepartmentDashboard() {
   const [myVenues, setMyVenues] = useState([]);
   const [cohorts, setCohorts] = useState([]);
   const [departmentId, setDepartmentId] = useState(null);
+  const [selectedLevel, setSelectedLevel] = useState('ALL');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -41,17 +47,21 @@ export default function DepartmentDashboard() {
       const profileRes = await API.get('');
       const deptId = profileRes.data.department;
 
-      const [slotsRes, coursesRes, venuesRes, cohortsRes] = await Promise.all([
-        API.get(`slots/?department=${deptId}`),
+      const slotResponses = await Promise.all([
+        ...LEVELS.map(level => API.get(`slots/?student_department=${deptId}&level=${level}`)),
+      ]);
+      const [coursesRes, venuesRes, cohortsRes] = await Promise.all([
         API.get(`courses/?department=${deptId}`),
         API.get(`venues/?department=${deptId}`),
         API.get(`cohorts/?department=${deptId}`),
       ]);
 
       setDepartmentId(deptId);
-      setSchedules(slotsRes.data.map(slot => ({
+      setSchedules(slotResponses.flatMap(response => response.data).map(slot => ({
         course_code: (slot.course_detail || '').split(' - ')[0] || `ID:${slot.course}`,
         room: slot.venue_name || 'TBD',
+        student_group_detail: slot.student_group_detail,
+        level: slotLevel(slot),
         day: (slot.day || 'MON').toUpperCase().substring(0, 3),
         start_time: slot.start_time ? slot.start_time.substring(0, 5) : '08:00',
         duration: parseInt(slot.duration || 1, 10),
@@ -69,9 +79,12 @@ export default function DepartmentDashboard() {
   useEffect(() => { fetchAll(); }, []);
 
   const handleExport = () => {
-    exportTimetablePdf(schedules, {
-      title: 'Department Timetable',
-      subtitle: 'Faculty of Science — GSU',
+    const exportSlice = selectedLevel === 'ALL' ? schedules : schedules.filter(slot => slot.level === selectedLevel);
+    exportTimetablePdf(exportSlice, {
+      level: selectedLevel === 'ALL' ? 'ALL LEVELS' : selectedLevel,
+      semester: 'FIRST',
+      title: `${selectedLevel === 'ALL' ? 'ALL LEVELS' : selectedLevel} FIRST SEMESTER LECTURES TIME TABLE`,
+      subtitle: `${selectedLevel === 'ALL' ? 'All Levels' : selectedLevel} — Faculty of Science, GSU`,
       filename: 'department-timetable'
     });
   };
@@ -170,7 +183,17 @@ export default function DepartmentDashboard() {
             ? <div className="text-center text-xs text-slate-400 py-12">Loading...</div>
             : schedules.length === 0
               ? <div className="text-center text-xs text-slate-400 py-12 bg-white rounded-2xl border border-slate-200/60 p-8">No sessions scheduled yet</div>
-              : <div className="bg-white rounded-2xl border border-slate-200/60 p-4 shadow-sm"><TimetableGrid schedules={schedules} /></div>
+              : <>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {['ALL', ...LEVELS].map(level => (
+                    <button key={level} onClick={() => setSelectedLevel(level)}
+                      className={`px-4 py-2 text-[10px] font-bold rounded-lg border ${selectedLevel === level ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200'}`}>
+                      {level === 'ALL' ? 'ALL' : level}
+                    </button>
+                  ))}
+                </div>
+                <div className="bg-white rounded-2xl border border-slate-200/60 p-4 shadow-sm"><TimetableGrid schedules={selectedLevel === 'ALL' ? schedules : schedules.filter(slot => slot.level === selectedLevel)} /></div>
+              </>
         )}
 
         {tab === 'MY COURSES' && (

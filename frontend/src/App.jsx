@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { checkSession } from './context/AuthActions';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
+import Signup from './pages/Signup';
 import OfficerDashboard from './pages/OfficerDashboard';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import DepartmentDashboard from './pages/DepartmentDashboard';
@@ -26,6 +27,7 @@ const AppRoutes = () => {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Signup />} />
       <Route path="/" element={<ProtectedRoute><RoleRouter /></ProtectedRoute>} />
       <Route path="/superadmin" element={<ProtectedRoute allowedRoles={['SUPER_ADMIN']}><SuperAdminDashboard /></ProtectedRoute>} />
       <Route path="/officer" element={<ProtectedRoute allowedRoles={['TIMETABLE_OFFICER','SUPER_ADMIN']}><OfficerDashboard /></ProtectedRoute>} />

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { loginUser } from '../context/AuthActions';
 
@@ -11,6 +11,7 @@ export default function Login() {
   
   const { setUser } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -37,6 +38,7 @@ export default function Login() {
             {error}
           </div>
         )}
+        {location.state?.message && <div className="mb-4 rounded border-l-4 border-green-600 bg-green-50 p-3 text-sm text-green-700">{location.state.message}</div>}
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
@@ -69,6 +71,7 @@ export default function Login() {
             {submitting ? 'AUTHENTICATING...' : 'ENTER SYSTEM'}
           </button>
         </form>
+        <p className="mt-5 text-center text-xs text-slate-500">New student? <Link to="/signup" className="font-bold text-blue-600">CREATE AN ACCOUNT</Link></p>
       </div>
     </div>
   );

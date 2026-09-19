@@ -5,7 +5,7 @@ export const checkSession = async (setUser, setLoading) => {
   if (!token) { setLoading(false); return; }
   try {
     const res = await API.get('');
-    setUser({ username: res.data.username, role: res.data.role });
+    setUser({ username: res.data.username, role: res.data.role, department: res.data.department });
   } catch {
     localStorage.removeItem('token');
   } finally {
@@ -17,7 +17,7 @@ export const loginUser = async (username, password, setUser) => {
   try {
     const res = await API.post('auth/login/', { username, password });
     localStorage.setItem('token', res.data.access);
-    setUser({ username: res.data.username, role: res.data.role });
+    setUser({ username: res.data.username, role: res.data.role, department: res.data.department });
     return { success: true, role: res.data.role };
   } catch (err) {
     return { success: false, error: err.response?.data?.error || 'Login failed' };

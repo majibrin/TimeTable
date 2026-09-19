@@ -14,6 +14,7 @@ export default function SuperAdminDashboard() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [filterRole, setFilterRole] = useState('');
+  const [editingUser, setEditingUser] = useState(null);
 
   const fetchAll = async () => {
     try {
@@ -71,6 +72,22 @@ export default function SuperAdminDashboard() {
       fetchAll();
     } catch (e) {
       msg(false, 'Failed to update user');
+    }
+  };
+
+  const handleEdit = async (e) => {
+    e.preventDefault();
+    try {
+      await API.patch(`users/${editingUser.id}/`, {
+        username: editingUser.username,
+        role: editingUser.role,
+        department: editingUser.department || null,
+      });
+      msg(true, 'User updated successfully');
+      setEditingUser(null);
+      fetchAll();
+    } catch (e) {
+      msg(false, e.response?.data?.username?.[0] || 'Failed to update user');
     }
   };
 
@@ -210,6 +227,11 @@ export default function SuperAdminDashboard() {
                         </div>
                       </div>
                       <button
+                        onClick={() => setEditingUser({ id: u.id, username: u.username, role: u.role, department: u.department || '' })}
+                        className="px-3 py-1.5 text-[10px] font-bold rounded border border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors">
+                        EDIT
+                      </button>
+                      <button
                         onClick={() => handleToggleActive(u.id, u.is_active)}
                         className={`px-3 py-1.5 text-[10px] font-bold rounded transition-colors ${
                           u.is_active
@@ -226,6 +248,33 @@ export default function SuperAdminDashboard() {
           </div>
         </div>
       </div>
+      {editingUser && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/60 p-4">
+          <form onSubmit={handleEdit} className="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-bold text-slate-800">Edit User</h2>
+              <button type="button" onClick={() => setEditingUser(null)} className="text-slate-500">CLOSE</button>
+            </div>
+            <div className="space-y-3">
+              <input value={editingUser.username} onChange={e => setEditingUser({...editingUser, username: e.target.value})} required
+                className="w-full rounded border border-slate-200 px-3 py-2 text-xs" placeholder="Username" />
+              <select value={editingUser.role} onChange={e => setEditingUser({...editingUser, role: e.target.value})}
+                className="w-full rounded border border-slate-200 px-3 py-2 text-xs">
+                {ROLES.map(role => <option key={role} value={role}>{role.replace('_', ' ')}</option>)}
+              </select>
+              <select value={editingUser.department || ''} onChange={e => setEditingUser({...editingUser, department: e.target.value})}
+                className="w-full rounded border border-slate-200 px-3 py-2 text-xs">
+                <option value="">No department</option>
+                {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setEditingUser(null)} className="rounded border border-slate-200 px-3 py-2 text-[10px] font-bold">CANCEL</button>
+              <button type="submit" className="rounded bg-blue-600 px-3 py-2 text-[10px] font-bold text-white">SAVE CHANGES</button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

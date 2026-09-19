@@ -104,6 +104,11 @@ class AuthenticationTests(BaseAPITestCase):
         self.assertEqual(response.data["username"], "officer1")
         self.assertEqual(response.data["role"], "TIMETABLE_OFFICER")
 
+    def test_public_department_list_is_accessible_without_auth(self):
+        response = self.client.get("/departments/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(len(response.data) >= 1)
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # 4.7.2 User Management Testing
@@ -584,3 +589,60 @@ class StudentGroupTests(BaseAPITestCase):
         slot = SessionSlot.objects.get(course=course)
         self.assertEqual(slot.cohort_id, self.cohort_100.id)
         self.assertIsNone(slot.student_group_id)
+
+    def test_student_department_view_includes_own_department_grouped_courses(self):
+        session = AcademicSession.objects.create(name="2025/2026", is_active=True)
+        Semester.objects.create(session=session, name="FIRST", is_active=True)
+
+        group = StudentGroup.objects.create(level="300L", scheme="GENERAL", name="A")
+        course = Course.objects.create(
+            title="Education Methods", code="EDU310", unit=2,
+            department=self.department, status="APPROVED"
+        )
+        course.student_groups.add(group)
+
+        SessionSlot.objects.create(
+            course=course,
+            venue=self.venue,
+            student_group=group,
+            semester=session.semesters.get(name='FIRST'),
+            day='MON',
+            start_time=datetime.time(9, 0),
+            duration=2,
+            is_published=True,
+        )
+
+        client = self.auth_client(self.student)
+        response = client.get(f"/slots/?published=true&student_department={self.department.id}&level=300L")
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(len(response.data), 1)
+
+    def test_student_department_view_includes_shared_group_courses_for_group_membership(self):
+        session = AcademicSession.objects.create(name="2025/2026", is_active=True)
+        Semester.objects.create(session=session, name="FIRST", is_active=True)
+
+        shared_group = StudentGroup.objects.create(level="400L", scheme="GENERAL", name="A")
+        shared_group.departments.add(self.department, self.other_department)
+
+        course = Course.objects.create(
+            title="Shared Elective", code="EDU420", unit=2,
+            department=self.other_department, status="APPROVED"
+        )
+        course.student_groups.add(shared_group)
+
+        SessionSlot.objects.create(
+            course=course,
+            venue=self.venue,
+            student_group=shared_group,
+            semester=session.semesters.get(name='FIRST'),
+            day='TUE',
+            start_time=datetime.time(10, 0),
+            duration=2,
+            is_published=True,
+        )
+
+        client = self.auth_client(self.student)
+        response = client.get(f"/slots/?published=true&student_department={self.department.id}&level=400L")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["course"], course.id)

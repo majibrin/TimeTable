@@ -7,15 +7,15 @@ User = get_user_model()
 class RegisterSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'password', 'role']
+        fields = ['id', 'username', 'email', 'password', 'department']
         extra_kwargs = {
             'password': {'write_only': True},
-            'role': {'required': True}  # Enforce role assignment on signup
         }
 
     def create(self, validated_data):
         # Hash the password properly before saving to database
         validated_data['password'] = make_password(validated_data['password'])
+        validated_data['role'] = User.RoleChoices.STUDENT
         return super().create(validated_data)
 
 

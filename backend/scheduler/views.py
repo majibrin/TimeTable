@@ -116,6 +116,35 @@ class UserCreateSerializer(serializers.ModelSerializer):
         return user
 
 
+class StudentRegistrationSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, min_length=8)
+
+    class Meta:
+        model = User
+        fields = ['username', 'password', 'department']
+
+    def create(self, validated_data):
+        password = validated_data.pop('password')
+        user = User(**validated_data, role=User.RoleChoices.STUDENT)
+        user.set_password(password)
+        user.save()
+        return user
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register_view(request):
+    serializer = StudentRegistrationSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    user = serializer.save()
+    return Response({
+        'id': user.id,
+        'username': user.username,
+        'role': user.role,
+        'department': user.department_id,
+    }, status=201)
+
+
 class UserListCreateView(generics.ListCreateAPIView):
     queryset = User.objects.select_related('department').all().order_by('role', 'username')
     permission_classes = [AllowAny]
@@ -158,10 +187,12 @@ class FacultyListCreateView(generics.ListCreateAPIView):
     permission_classes = [AllowAny]
 
     def dispatch(self, request, *args, **kwargs):
+        if request.method == 'GET':
+            return super().dispatch(request, *args, **kwargs)
         user = get_authenticated_user(request)
         if not user:
             return JsonResponse({"error": "Unauthorized"}, status=401)
-        if request.method != 'GET' and user.role not in ('SUPER_ADMIN', 'TIMETABLE_OFFICER'):
+        if user.role not in ('SUPER_ADMIN', 'TIMETABLE_OFFICER'):
             return JsonResponse({"error": "Forbidden"}, status=403)
         return super().dispatch(request, *args, **kwargs)
 
@@ -192,10 +223,12 @@ class DepartmentListCreateView(generics.ListCreateAPIView):
         return qs
 
     def dispatch(self, request, *args, **kwargs):
+        if request.method == 'GET':
+            return super().dispatch(request, *args, **kwargs)
         user = get_authenticated_user(request)
         if not user:
             return JsonResponse({"error": "Unauthorized"}, status=401)
-        if request.method != 'GET' and user.role not in ('SUPER_ADMIN', 'TIMETABLE_OFFICER'):
+        if user.role not in ('SUPER_ADMIN', 'TIMETABLE_OFFICER'):
             return JsonResponse({"error": "Forbidden"}, status=403)
         return super().dispatch(request, *args, **kwargs)
 
@@ -226,10 +259,12 @@ class LevelCohortListCreateView(generics.ListCreateAPIView):
         return qs
 
     def dispatch(self, request, *args, **kwargs):
+        if request.method == 'GET':
+            return super().dispatch(request, *args, **kwargs)
         user = get_authenticated_user(request)
         if not user:
             return JsonResponse({"error": "Unauthorized"}, status=401)
-        if request.method != 'GET' and user.role not in ('SUPER_ADMIN', 'TIMETABLE_OFFICER'):
+        if user.role not in ('SUPER_ADMIN', 'TIMETABLE_OFFICER'):
             return JsonResponse({"error": "Forbidden"}, status=403)
         return super().dispatch(request, *args, **kwargs)
 
@@ -470,11 +505,18 @@ class SessionSlotListCreateView(generics.ListCreateAPIView):
         # Tace bayanan idan dalibi ya bincika ta amfani da sashensa da matakinsa
         if student_dept and level:
             qs = qs.filter(
-                # Hanya ta 1: Idan kwas din yana amfani da Group, kuma sashen dalibin yana ciki
+                # 1) The student's department is attached to the slot's group at this level.
                 Q(student_group__departments__id=student_dept, student_group__level=level) |
-                
-                # Hanya ta 2: Idan kwas din bashi da Group (asalin Cohort daya ne tilas)
-                Q(cohort__department_id=student_dept, cohort__level=level, student_group__isnull=True)
+
+                # 2) The slot belongs to a departmental cohort at this level.
+                Q(cohort__department_id=student_dept, cohort__level=level, student_group__isnull=True) |
+
+                # 3) The slot belongs to a course owned by the student's department,
+                #    even when it is scheduled by a general/shared group at this level.
+                Q(course__department_id=student_dept, student_group__level=level) |
+
+                # 4) The slot belongs to a department-owned course with a cohort fallback at this level.
+                Q(course__department_id=student_dept, student_group__isnull=True, cohort__level=level)
             )
         else:
             # Idan ba a bada takamaiman bayanan dalibi ba, tsarin zai yi amfani da tsofaffin matattacen
@@ -712,7 +754,9 @@ def generate_timetable_trigger(request):
 
     active_semester = Semester.objects.filter(is_active=True).first()
 
-    courses = Course.objects.filter(status='APPROVED').prefetch_related('cohorts', 'student_groups').all()
+    courses = Course.objects.filter(status='APPROVED').prefetch_related(
+        'cohorts', 'student_groups', 'student_groups__departments'
+    ).all()
     venues = Venue.objects.filter(status='APPROVED').all()
     level_cohorts = LevelCohort.objects.all()
 
@@ -734,6 +778,24 @@ def generate_timetable_trigger(request):
             offering_dept_ids.add(course.department_id)
 
         groups = list(course.student_groups.all())
+
+        # General and practical 100L groups are reusable level-wide bundles;
+        # their CSV rows intentionally have no course_code to attach by.
+        has_course_specific_group = any(
+            group.scheme == StudentGroup.SchemeChoices.COURSE_SPECIFIC
+            for group in groups
+        )
+        if course_level == '100L' and not has_course_specific_group and course.department_id:
+            fallback_scheme = (
+                StudentGroup.SchemeChoices.PRACTICAL
+                if any(term in course.title.lower() for term in ('practical', 'lab', 'laboratory'))
+                else StudentGroup.SchemeChoices.GENERAL
+            )
+            groups = list(StudentGroup.objects.filter(
+                level='100L',
+                scheme=fallback_scheme,
+                departments=course.department_id,
+            ).distinct().prefetch_related('departments'))
 
         if groups:
             for group in groups:
