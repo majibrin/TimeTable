@@ -3,7 +3,6 @@ import autoTable from 'jspdf-autotable';
 
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const TIMES = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
-const STACK_DIVIDER = '────────────────────';
 
 function formatSessionLabel(session) {
   const courseCode = session.course_code || 'COURSE';
@@ -65,7 +64,7 @@ export function exportTimetablePdf(schedules = [], meta = {}) {
       } else {
         const duration = Math.max(...matches.map(item => Number(item.duration) || 1), 1);
         const content = matches
-          .map((item, itemIndex) => `${itemIndex > 0 ? `${STACK_DIVIDER}\n` : ''}${formatSessionLabel(item)}`)
+          .map(item => formatSessionLabel(item))
           .join('\n');
         row.push({
           content,
