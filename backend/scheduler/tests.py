@@ -646,3 +646,33 @@ class StudentGroupTests(BaseAPITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["course"], course.id)
+
+    def test_each_department_sees_its_own_course_at_selected_level(self):
+        session = AcademicSession.objects.create(name="2025/2026", is_active=True)
+        semester = Semester.objects.create(session=session, name="FIRST", is_active=True)
+        other_cohort = LevelCohort.objects.create(
+            department=self.other_department, level="200L", student_count=60
+        )
+        course = Course.objects.create(
+            title="Biology Methods", code="BIO210", unit=2,
+            department=self.other_department, status="APPROVED"
+        )
+        course.cohorts.add(other_cohort)
+        SessionSlot.objects.create(
+            course=course,
+            venue=self.venue,
+            cohort=other_cohort,
+            semester=semester,
+            day='WED',
+            start_time=datetime.time(11, 0),
+            duration=2,
+            is_published=True,
+        )
+
+        client = self.auth_client(self.other_department_user)
+        response = client.get(
+            f"/slots/?published=true&student_department={self.other_department.id}&level=200L"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["course"], course.id)

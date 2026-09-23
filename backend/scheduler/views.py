@@ -502,22 +502,16 @@ class SessionSlotListCreateView(generics.ListCreateAPIView):
         student_dept = self.request.query_params.get('student_department')  # ID na sashen dalibi
         level = self.request.query_params.get('level')                      # Misali: '100L'
         
-        # Tace bayanan idan dalibi ya bincika ta amfani da sashensa da matakinsa
+        # A student sees any selected-level slot connected to their department
+        # through the course, student group, or fallback cohort.
         if student_dept and level:
-            qs = qs.filter(
-                # 1) The student's department is attached to the slot's group at this level.
-                Q(student_group__departments__id=student_dept, student_group__level=level) |
-
-                # 2) The slot belongs to a departmental cohort at this level.
-                Q(cohort__department_id=student_dept, cohort__level=level, student_group__isnull=True) |
-
-                # 3) The slot belongs to a course owned by the student's department,
-                #    even when it is scheduled by a general/shared group at this level.
-                Q(course__department_id=student_dept, student_group__level=level) |
-
-                # 4) The slot belongs to a department-owned course with a cohort fallback at this level.
-                Q(course__department_id=student_dept, student_group__isnull=True, cohort__level=level)
+            level_match = Q(student_group__level=level) | Q(cohort__level=level)
+            department_match = (
+                Q(course__department_id=student_dept) |
+                Q(student_group__departments__id=student_dept) |
+                Q(cohort__department_id=student_dept)
             )
+            qs = qs.filter(level_match & department_match)
         else:
             # Idan ba a bada takamaiman bayanan dalibi ba, tsarin zai yi amfani da tsofaffin matattacen
             department = self.request.query_params.get('department')
